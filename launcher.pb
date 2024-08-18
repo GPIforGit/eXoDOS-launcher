@@ -241,7 +241,7 @@ Structure sConfig
   List headerSize.i()
   List headerFilter.s()
   window.sMainwindow
-  batch.sConfigBatch
+  batchs.sConfigBatch
   ListView.i
   AutomaticMinimize.i
 EndStructure
@@ -2259,7 +2259,7 @@ addPatchInfo("IF NOT EXIST .\emulators\dosbox\*.lang goto english",
              "goto english")
 
 addPatchInfo("call install.bat",
-             "set FOLDER=%VAR%"+#CRLF$+"call %GPI_INSTALL%")
+             "set FOLDER=%VAR%"+#CRLF$+"call "+#DQUOTE$+"%GPI_INSTALL%"+#DQUOTE$)
 
 addPatchInfo("if %lang_cnt% == 1 goto :skip_selection",
              "goto :skip_selection")
@@ -2315,17 +2315,17 @@ Procedure __patchBatch(file.s,outfile.s,*info.sConfigDateSize)
   __makedir(GetPathPart(file))
   fout=CreateFile(#PB_Any,outfile)
   If fout
-    WriteStringN(fout,"@echo off"+#CRLF$+"title %GPI_TITLE%"+#CRLF$+content)
+    WriteStringN(fout,"@echo off"+#CRLF$+"title %GPI_TITLE%"+#CRLF$+content);+#CRLF$+"pause")
     CloseFile(fout)
   EndIf
 
 EndProcedure
 Procedure PatchExodosBatch()
-  __patchBatch(config\eXoDOSpath+"eXo\util\install.bat", "media\install.bat",config\batch\install)
-  __patchBatch(config\eXoDOSpath+"eXo\util\launch.bat", "media\launch.bat",config\batch\laucher)
+  __patchBatch(config\eXoDOSpath+"eXo\util\install.bat", "media\install.bat",config\batchs\install)
+  __patchBatch(config\eXoDOSpath+"eXo\util\launch.bat", "media\launch.bat",config\batchs\laucher)
 
-  __patchBatch(config\eXoDOSpath+"eXo\util\!languagepacks\install.bat", "media\lang_install.bat",config\batch\lang_install)
-  __patchBatch(config\eXoDOSpath+"eXo\util\!languagepacks\launch.bat", "media\lang_launch.bat",config\batch\lang_laucher)
+  __patchBatch(config\eXoDOSpath+"eXo\util\!languagepacks\install.bat", "media\lang_install.bat",config\batchs\lang_install)
+  __patchBatch(config\eXoDOSpath+"eXo\util\!languagepacks\launch.bat", "media\lang_launch.bat",config\batchs\lang_laucher)
 EndProcedure
 
 Procedure InitLocalInstall()
@@ -3503,8 +3503,8 @@ saveFavorite()
 KillThread(threadHandle)
 
 ; IDE Options = PureBasic 6.11 LTS (Windows - x64)
-; CursorPosition = 1407
-; FirstLine = 1384
+; CursorPosition = 2327
+; FirstLine = 2319
 ; Folding = ------------------
 ; Optimizer
 ; EnableThread
@@ -3512,4 +3512,4 @@ KillThread(threadHandle)
 ; EnableOnError
 ; UseIcon = exodos.ico
 ; Executable = eXeDOS_Launcher.exe
-; CurrentDirectory = E:\exedosdemo2
+; CurrentDirectory = C:\Spiele\eXoDOS Launcher\
