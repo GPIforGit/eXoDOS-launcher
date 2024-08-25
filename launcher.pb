@@ -2,9 +2,11 @@
 ;intro
 
 UseJPEGImageDecoder() 
+UseJPEGImageEncoder()
+;UseJPEG2000ImageEncoder()
 UseJPEG2000ImageDecoder() 
 UsePNGImageDecoder() 
-UsePNGImageEncoder()
+;UsePNGImageEncoder()
 UseTIFFImageDecoder() 
 UseTGAImageDecoder() 
 UseGIFImageDecoder()
@@ -12,17 +14,52 @@ UseFLACSoundDecoder()
 UseOGGSoundDecoder()
 InitSound()
 InitMovie()
-UseMD5Fingerprint()
+UseZipPacker()
+
+;UseMD5Fingerprint()
+
+;TODO Header variable
+;TODO typepatch
+
+; - listview box art, 3d box art, title screen
+; - größe small, normal, big
+; - sprache der Titel Englisch / Deutsch
+; - imagecache jetzt in jpg
+; - sortierung der Liste wird gespeichert
+; - unpatched batch file option (lokale installation klappt dann nicht mehr!)
+; - kleinere Bugfixes
+; - Installation des Updates
+; - Installation des German-Magazine-Patch mit vielen korrekturen!
+; - filter extras
+; - eXo-Bugfix - shader/filter-Konfiguration bei deutschen Spielen klappt jetzt...
+; - nur in config-button-menü:
+;     -- (experimental) Patch exception batch - automatisch die Fragen vor der Dosbox auswählen (dosbox/scummvm bspw)
+;     -- (experimental) Patch run batch (dosbox/sound) - automatisch die Fragen in der Dosbox auswählen - meist soundauswahl
+
+
+
 
 EnableExplicit
 
 
 #title="eXoDOS launcher"
+#version="1.3"
 
 Declare stopintro()
 Declare Resize()
 Declare updateMusic(*currentgame)
 Declare DrawList()
+Declare.s findAcrobatReader()
+
+
+
+Global RegEx_Magazine= CreateRegularExpression(#PB_Any,"(Magazines.*\.pdf)")
+Global regEx_page=CreateRegularExpression(#PB_Any,"-page (\d*)")
+
+Global enforceCheckFiles=#False
+Global forceUpdate=#False
+
+Global acrobatReader.s=findAcrobatReader()
 
 Global imgLoading
 Global imgQuestionmark
@@ -60,16 +97,127 @@ Global gOptDisk
 Global gOptFan
 Global glist
 
-Global fbig
+Global fbig,fConsola
 Global sSound=#Null,sMovie=#Null,sMusic=#Null
 Global hideConsole
 
 Global intro_win,intro_movie,intro_wait,intro_pic
 
+
+Enumeration
+  #offset_title
+  #offset_developer
+  #offset_publisher
+  #offset_releasedate
+  #offset_series
+  #offset_genre
+  #offset_installed
+  #offset_source
+  #offset_favorite
+  #offset_german
+  #offset_adult
+  #offset_extras
+EndEnumeration
+
 ;-
 ;-{ MISC
 ;-
 
+Procedure.s ReadRegKey(OpenKey.l,SubKey.s,ValueName.s)
+  Protected hKey.l=0
+  Protected keyvalue.s=Space(1024)
+  Protected datasize.l=1024
+  
+  If RegOpenKeyEx_(OpenKey,SubKey,0,#KEY_READ,@hKey)
+    keyvalue=""
+  Else 
+    If RegQueryValueEx_(hKey,ValueName,0,0,@keyvalue,@datasize)
+      keyvalue=""
+    Else  
+      keyvalue=Left(keyvalue,datasize-1)
+    EndIf
+    RegCloseKey_(hKey)
+  EndIf
+  
+  ProcedureReturn keyvalue
+EndProcedure
+;RunProgram("g:\exodos\exo\Magazines\!german\DOS International\DOS International 1989-05.pdf","/a page=3","")
+
+
+Procedure.s findAcrobatReader()
+  Protected exe.s
+  exe=ReadRegKey(#HKEY_LOCAL_MACHINE,"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Acrobat.exe","")
+  If exe=""
+    exe=ReadRegKey(#HKEY_LOCAL_MACHINE,"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\AcroRd32.exe","")
+  EndIf
+  If exe=""
+    exe=ReadRegKey(#HKEY_LOCAL_MACHINE,"Software\Classes\acrobat\shell\open\command","")
+    If Left(exe,1)=#DQUOTE$
+      exe=StringField(exe,2,#DQUOTE$)
+    Else
+      exe=StringField(exe,1," ")
+    EndIf
+  EndIf
+  
+  ProcedureReturn exe
+EndProcedure
+
+Procedure.s findPDF(file.s,*page.integer=#Null)
+  Protected in, text.s,ret.s
+  in=ReadFile(#PB_Any,file)
+  text.s=ReadString(in,#PB_File_IgnoreEOL,Lof(in))
+  CloseFile(in)
+  
+  If ExamineRegularExpression(RegEx_Magazine,text)
+    While NextRegularExpressionMatch(RegEx_Magazine)
+      ret= RegularExpressionMatchString(RegEx_Magazine)
+    Wend
+  EndIf
+  
+  If *page
+    *page\i=0
+    If ExamineRegularExpression(regEx_page,text)
+      While NextRegularExpressionMatch(regEx_page)
+        *page\i=Val( RegularExpressionGroup(regEx_page,1) )
+      Wend
+    EndIf
+  EndIf
+  
+  
+  If ret
+    ; repair paths...
+    ret=ReplaceString(ret,"\PC Spiel Special\","\PC Spiel\")
+    ret=ReplaceString(ret,"\PC-Player - Sonderheft CD-Player\","\PC-Player\")
+    ret=ReplaceString(ret,"\PC-Player Special\","\PC-Player\")
+    
+    ret=ReplaceString(ret,"\ASM Sonderheft\","\ASM\")
+    ret=ReplaceString(ret,"\ASM Extra\","\ASM\")
+    
+    ; and filename
+    ret=ReplaceString(ret,"ASM Sonderheft 1.pdf","ASM Sonderheft 01.pdf")
+    ret=ReplaceString(ret,"ASM Sonderheft 2.pdf","ASM Sonderheft 02.pdf")
+    ret=ReplaceString(ret,"ASM Sonderheft 3.pdf","ASM Sonderheft 03.pdf")
+    ret=ReplaceString(ret,"ASM Sonderheft 4.pdf","ASM Sonderheft 04.pdf")
+    ret=ReplaceString(ret,"ASM Sonderheft 5.pdf","ASM Sonderheft 05.pdf")
+    ret=ReplaceString(ret,"ASM Sonderheft 6.pdf","ASM Sonderheft 06.pdf")
+    ret=ReplaceString(ret,"ASM Sonderheft 7.pdf","ASM Sonderheft 07.pdf")
+    ret=ReplaceString(ret,"ASM Sonderheft 8.pdf","ASM Sonderheft 08.pdf")
+    ret=ReplaceString(ret,"ASM Sonderheft 9.pdf","ASM Sonderheft 09.pdf")
+    
+    ret="eXo\"+ret
+  EndIf   
+    
+  
+  ProcedureReturn ret
+EndProcedure
+
+Procedure.s makeFilename(name.s)
+  Protected forbidden.s = ~":*?<w>\"\\/'& ",i
+  For i=1 To Len(forbidden)
+    name=ReplaceString(name,Mid(forbidden,i,1),"_")
+  Next
+  ProcedureReturn LCase(ReplaceString(name,"  "," "))
+EndProcedure
 Procedure __MyLoadImage(id,file.s)
   Protected r=LoadImage(id,file)
   If r And (ImageFrameCount(r)>1 And LCase(GetExtensionPart(file))="gif") 
@@ -116,6 +264,10 @@ Procedure max(a,b)
   EndIf
   ProcedureReturn b
 EndProcedure
+Procedure.s removeLeft(s.s,l)
+  ProcedureReturn Left(s,Len(s)-l)
+EndProcedure
+
 Procedure SizeImageWidth(id,w)
   Protected iw=ImageWidth(id), ih=ImageHeight(id)
   If iw=w
@@ -158,6 +310,10 @@ EndProcedure
 Global handlePRG
 Procedure RunProgramEx(file.s,para.s,work.s)
   If handlePRG
+    If ProgramRunning(handlePRG)
+      ProcedureReturn #False
+    EndIf
+    
     CloseProgram(handlePRG)
     handlePRG=#Null
   EndIf
@@ -184,8 +340,12 @@ EndProcedure
 ;-{ CONFIG
 ;-
 
-#listview_detail=0
-#listview_boxart=1
+Enumeration
+#listview_detail
+#listview_3Dboxart
+#listview_boxart
+#listview_title
+EndEnumeration
 
 Structure sMainwindow
   x.i
@@ -220,16 +380,24 @@ Structure sConfigDateSize
   size.i
   date.i
 EndStructure
-Structure sConfigBatch
-  laucher.sConfigDateSize
-  install.sConfigDateSize
-  lang_laucher.sConfigDateSize
-  lang_install.sConfigDateSize
+Structure sConfigHeader
+  offset.i
+  sort.i
+EndStructure
+
+Structure sConfigTime
+  time.q
+  size.q
+EndStructure
+
+Structure sConfigPatch
+  Mediapack_DE.i
+  Map runbat.s()
 EndStructure
 
 Structure sConfig
   volume.sConfigVolume
-  BoxArt.sConfigSize
+  BoxArt.sConfigSize[3]
   Color.sConfigColor
   maxBoxArt.i
   eXoDOSpath.s
@@ -241,13 +409,55 @@ Structure sConfig
   List headerSize.i()
   List headerFilter.s()
   window.sMainwindow
-  batchs.sConfigBatch
+  Map FileInfo.sConfigDateSize()
   ListView.i
+  ListViewSize.i
   AutomaticMinimize.i
+  ConfigVersion.i
+  TitleLang.i
+  UseOriginalBatch.i
+  header.sConfigHeader
+  patch.sConfigPatch
+  
+  unpack.sConfigTime
+  
+  useAcrobatReader.i
 EndStructure
 
 Global config.sconfig
 Global color.sConfigColorVal
+
+Procedure.s CalculatePackTime(size.q)
+  Protected fac.d
+  If config\unpack\size > 0
+    fac=config\unpack\time / config\unpack\size
+    Protected d.q=fac*size
+    Protected second=(d /1000) % 60
+    Protected minutes=(d /60000) %60
+    If minutes=0 And second=0 
+      second=1
+    EndIf
+    If Minutes<>0       
+      ProcedureReturn "(about "+minutes+" min and "+second+" sec)"
+    Else
+      ProcedureReturn "(about "+second+" sec)"
+    EndIf
+  EndIf
+  ProcedureReturn "(unknown)"
+EndProcedure
+
+Global _PackTimeStart
+Procedure PackTimeStart()
+  _PackTimeStart=ElapsedMilliseconds()
+EndProcedure
+Procedure PackTimeEnd(size)
+  config\unpack\size+size
+  config\unpack\time+ (ElapsedMilliseconds()-_PackTimeStart)
+  If config\unpack\size > 10000000000 Or config\unpack\time > 10000000000
+    config\unpack\size / 10000
+    config\unpack\time / 10000
+  EndIf
+EndProcedure
 
 Macro decolor(col)
   color\col= RGB(Val("$"+Left(config\color\col,2)),Val("$"+Mid(config\color\col,3,2)),Val("$"+Right(config\color\col,2)))
@@ -257,13 +467,22 @@ Procedure loadConfig()
   config\volume\WAV=100
   config\volume\MP3=100
   config\volume\MOD=60
-  config\BoxArt\width=850*15/100
-  config\BoxArt\height=850*15/100  
+  config\BoxArt[0]\width=127
+  config\BoxArt[0]\height=127
+  config\BoxArt[1]\width=200
+  config\BoxArt[1]\height=200
+  config\BoxArt[2]\width=300
+  config\BoxArt[2]\height=300
   config\maxBoxArt=500
   config\AutomaticMinimize=#True
   config\Color\listEntryInstalled="eeeeff"
   config\Color\listEntry="aaaaaa"
   config\BoxArtCache=#True
+  config\TitleLang=#LANG_ENGLISH
+  config\header\offset=#offset_title
+  config\header\sort=#PB_Sort_Ascending
+  config\useAcrobatReader = #True
+  
   
   ExamineDesktops()
   
@@ -296,8 +515,19 @@ Procedure loadConfig()
       config\localMedias=Bool(MessageRequester(#title,"Install media (images,video,music) local?",#PB_MessageRequester_YesNo)=#PB_MessageRequester_Yes)
     EndIf
     config\BoxArtCache=Bool(MessageRequester(#title,"Cache Box art? (recommanded)",#PB_MessageRequester_YesNo)=#PB_MessageRequester_Yes)
-       
+  Else
+    
+    If config\ConfigVersion=0
+      DeleteFile("eXeDOS_launcher.exe")
+      DeleteDirectory("BoxArt.Cache","*.*",#PB_FileSystem_Force)
+      enforceCheckFiles=#True
+    EndIf
+    
+    
   EndIf
+  
+  config\ConfigVersion=1
+  
 EndProcedure
 
 Procedure saveConfig()
@@ -369,10 +599,14 @@ Enumeration
   #hl_german
   #hl_adult
   
+  #hl_extras
+  
   #hl_play
   #hl_alternateLauncher
   #hl_config
   #hl_view
+  #hl_viewSize
+  #hl_UseOriginalBatch
   
   #hl_introPic
   #hl_introVideo
@@ -382,6 +616,14 @@ Enumeration
   #hl_openGameFolder
   #hl_openGameFolderGerman
   #hl_openNotGameFolder
+  
+  #hl_openSetupFolder
+  
+  #hl_TitleLang
+  
+  #hl_patchInteractive
+  
+  #hl_patchRunBat
   
 EndEnumeration
 
@@ -469,6 +711,9 @@ Structure sGame
   Title.s
   SortTitle.s
   
+  TitleGerman.s
+  SortTitleGerman.s
+  
   Publisher.s
   ReleaseDate.s
   
@@ -500,7 +745,11 @@ Structure sGame
   installedGerman.i
   installedEnglish.i
   
+  hasExceptionBat.i
+  hasGermanExceptionBat.i
+  
   hasGerman.i
+  hasEnglishInstallFiles.i
   
   Genre.s
   VideoUrl.s
@@ -558,19 +807,7 @@ Structure sOnce
   List installed.s()
 EndStructure
 
-Enumeration
-  #offset_title
-  #offset_developer
-  #offset_publisher
-  #offset_releasedate
-  #offset_series
-  #offset_genre
-  #offset_installed
-  #offset_source
-  #offset_favorite
-  #offset_german
-  #offset_adult
-EndEnumeration
+
 
 Enumeration
   #drag_none
@@ -624,6 +861,14 @@ Procedure unloadOnce()
 EndProcedure
 
 Procedure loadGamesList()
+  Protected dat=GetFileDate("media\games.json",#PB_Date_Modified)
+  Protected size=FileSize("media\games.json")
+  If config\FileInfo("games.json")\date<>dat Or config\FileInfo("games.json")\size<>size
+    enforceCheckFiles=#True
+    config\FileInfo()\date=dat
+    config\FileInfo()\size=size
+  EndIf
+    
   Protected id=LoadJSON(#PB_Any,"media\games.json")
   If Not id 
     MessageRequester("launcher","Can't open games.json!"+#LF$+JSONErrorMessage()+#LF$+JSONErrorLine()+#LF$+JSONErrorPosition())
@@ -632,8 +877,8 @@ Procedure loadGamesList()
   ExtractJSONList(JSONValue(id), games())
   FreeJSON(id)
   
-  ListGames\sort=#PB_Sort_Ascending
-  ListGames\offset=#offset_title
+  ListGames\sort=config\header\sort
+  ListGames\offset=config\header\offset
   ListGames\keyboarfocus=-1
   ListGames\PictureType="Screenshot"
   
@@ -649,6 +894,7 @@ Procedure loadGamesList()
   addHeader("Series",160,#offset_series)
   addHeader("Genre",160,#offset_genre)  
   addHeader("Source",83,#offset_source)  
+  addHeader("Extras",16,#offset_extras)
 EndProcedure
 
 Procedure findHeader(offset)
@@ -660,11 +906,32 @@ Procedure findHeader(offset)
   ProcedureReturn #False
 EndProcedure
 
-Procedure updatePicture(*currentgame.sGame)
+Procedure updatePicture(*currentgame.sGame,force_visible=#False)
   
   removeImage(iPicture)
-  If ListIndex(*currentgame\Images(ListGames\PictureType)\Image())>=0
-    iPicture=LoadImage(#PB_Any,findfile(*currentgame\Images(ListGames\PictureType)\Image()) )
+  
+  Protected type.s=ListGames\PictureType
+  
+  If force_visible And ListSize(*currentgame\Images(type)\Image())<=0
+    If ListSize(*currentgame\Images("Screenshot")\Image())>0
+      type="Screenshot"
+    ElseIf ListSize(*currentgame\Images("Box")\Image())>0
+      type="Box"
+    ElseIf ListSize(*currentgame\Images("Medium")\Image())>0
+      type="Medium"
+    ElseIf ListSize(*currentgame\Images("Fanart")\Image())>0
+      type="Fanart"
+    ElseIf ListSize(*currentgame\Images("Advertisement")\Image())>0
+      type="Advertisement"
+    EndIf
+     
+    FirstElement(*currentgame\Images(type)\image())
+  EndIf
+  
+  
+  
+  If ListIndex(*currentgame\Images(type)\Image())>=0
+    iPicture=LoadImage(#PB_Any,findfile(*currentgame\Images(type)\Image()) )
 ;     If Not iPicture And NextElement(*currentgame\Images(ListGames\PictureType)\Image())
 ;       iPicture=LoadImage(#PB_Any,findfile(*currentgame\Images(ListGames\PictureType)\Image()) )
 ;     EndIf
@@ -697,12 +964,27 @@ EndProcedure
 
 
 Procedure updateGame(*currentgame.sGame)
-  SetGadgetText(gTitle,*currentgame\Title)
+  Static oldGameId.s
+  
+  If config\TitleLang=#LANG_GERMAN And *currentgame\TitleGerman<>""
+    SetGadgetText(gTitle,*currentgame\TitleGerman)
+  Else
+    SetGadgetText(gTitle,*currentgame\Title)
+  EndIf
   
   removeImage(iBanner)
   
-  If FirstElement(*currentgame\Images("Banner")\Image())
-    iBanner=LoadImage(#PB_Any, findfile(*currentgame\Images("Banner")\Image()) )
+  Protected title.s
+  If config\TitleLang=#LANG_GERMAN And *currentgame\TitleGerman<>""
+    title=*currentgame\TitleGerman
+  Else
+    title=*currentgame\Title
+  EndIf
+  
+  If (config\TitleLang=#LANG_GERMAN And *currentgame\TitleGerman="") Or config\TitleLang=#LANG_ENGLISH
+    If FirstElement(*currentgame\Images("Banner")\Image()) 
+      iBanner=LoadImage(#PB_Any, findfile(*currentgame\Images("Banner")\Image()) )
+    EndIf
   EndIf
   
   If iBanner=#Null
@@ -710,14 +992,14 @@ Procedure updateGame(*currentgame.sGame)
     iBanner=CreateImage(#PB_Any,10,10,24,#PB_Image_Transparent)
     StartDrawing(ImageOutput(iBanner))
     DrawingFont(FontID(fbig))
-    w=TextWidth(*currentgame\Title)
-    h=TextHeight(*currentgame\Title)
+    w=TextWidth(title)
+    h=TextHeight(title)
     StopDrawing()
     ResizeImage(iBanner,w,h)
     StartDrawing(ImageOutput(iBanner))
     DrawingFont(FontID(fbig))
     DrawingMode(#PB_2DDrawing_AllChannels )
-    DrawText(0,0,*currentgame\Title,RGBA(255,255,255,255),0)
+    DrawText(0,0,title,RGBA(255,255,255,255),0)
     StopDrawing()
   EndIf
   
@@ -726,12 +1008,12 @@ Procedure updateGame(*currentgame.sGame)
   EndIf
   
   FirstElement(*currentgame\Images(ListGames\PictureType)\Image())
-  updatePicture(*currentgame)
+  updatePicture(*currentgame,Bool(oldGameId<>*currentgame\id))
   
-  Protected text.s=""
+  Protected text.s=*currentgame\Title
   ForEach *currentgame\AlternateTitle()
     If ListIndex(*currentgame\AlternateTitle())=0
-      text+"aka "
+      text+" aka "
     Else
       text+", "
     EndIf
@@ -777,8 +1059,8 @@ Procedure updateGame(*currentgame.sGame)
       AddHyperlink(text,#hl_Series,text,#True)
     Next
   EndIf
-  
-  
+    
+  AddHyperlink(" ",#hl_none,"")
   
   If *currentgame\WikipediaURL<>""
     AddHyperlink("Wikipedia",#hl_open,*currentgame\WikipediaURL)
@@ -796,15 +1078,32 @@ Procedure updateGame(*currentgame.sGame)
     AddHyperlink("Manual",#hl_open,findfile(*currentgame\ManualPath) )
   EndIf
   
+  AddHyperlink(" ",#hl_none,"")
+  
+  Protected head.s, oldhead.s
+  
   ForEach *currentgame\Extras()
-    AddHyperlink(GetFilePart(*currentgame\Extras()),#hl_open,exoDosFile(*currentgame\Extras()))    
+    head=GetFilePart(removeLeft(GetPathPart( *currentgame\Extras() ),1) )
+    If FindString(*currentgame\extras(),"!german")>0
+      head+" (de)"
+    EndIf
+    
+    If head <> oldhead
+      AddHyperlink(head,#hl_open,config\eXoDOSpath+GetPathPart(*currentgame\Extras()) )
+      oldhead=head
+    EndIf
+    
+    AddHyperlink("    "+GetFilePart(*currentgame\Extras(),#PB_FileSystem_NoExtension),#hl_open,exoDosFile(*currentgame\Extras()))    
   Next
   CloseGadgetList()
   
   Resize()
   
-  SetGadgetAttribute(gContainer,#PB_ScrollArea_X,0)
-  SetGadgetAttribute(gContainer,#PB_ScrollArea_Y,0)
+  If oldGameId<>*currentgame\id
+    SetGadgetAttribute(gContainer,#PB_ScrollArea_X,0)
+    SetGadgetAttribute(gContainer,#PB_ScrollArea_Y,0)
+    oldGameId=*currentgame\id
+  EndIf
   
   
   updateMusic(*currentgame)
@@ -827,7 +1126,7 @@ Procedure updateGame(*currentgame.sGame)
   EndIf
   
   
-  SetWindowTitle(mainwindow,#title+" - "+symbol+*currentgame\Title)
+  SetWindowTitle(mainwindow,#title+" - "+symbol+title)
   
 EndProcedure
 ;}
@@ -1040,6 +1339,12 @@ EndProcedure
 
 Procedure.s GetGameOffset(*game.sGame,offset,sort=#False)
   Select offset
+    Case #offset_extras
+      If ListSize(*game\Extras())>0
+        ProcedureReturn "X"
+      Else
+        ProcedureReturn " "
+      EndIf
     Case #offset_adult
       If *game\isAdult
         ProcedureReturn "X"
@@ -1064,12 +1369,21 @@ Procedure.s GetGameOffset(*game.sGame,offset,sort=#False)
       Else
         ProcedureReturn " "
       EndIf
-    Case #offset_title
-      If sort
-        ProcedureReturn *game\SortTitle
-      Else
-        ProcedureReturn *game\Title
+    Case #offset_title      
+      If config\TitleLang=#LANG_GERMAN And *game\TitleGerman<>""
+        If sort And *game\SortTitleGerman<>""
+          ProcedureReturn *game\SortTitleGerman
+        Else
+          ProcedureReturn *game\TitleGerman
+        EndIf
+      Else        
+        If sort And *game\SortTitle<>""
+          ProcedureReturn *game\SortTitle
+        Else
+          ProcedureReturn *game\Title
+        EndIf
       EndIf
+      
     Case #offset_developer
       ProcedureReturn *game\Developer
     Case #offset_publisher
@@ -1113,16 +1427,28 @@ Procedure CreateGameList()
         If ListGames\header()\offset=#offset_title
           Protected found=#False
           
-          ForEach games()\AlternateTitle()
-            If FindString(games()\AlternateTitle(),ListGames\header()\filter,0,#PB_String_NoCase)>0
-              found=#True
-              Break
-            EndIf
-          Next
-          If found=#False And FindString(games()\Title,ListGames\header()\filter,0,#PB_String_NoCase)<=0
+          If FindString(games()\Title,ListGames\header()\filter,0,#PB_String_NoCase)>0
+            found=#True
+          EndIf
+          
+          If found=#False And FindString(games()\TitleGerman,ListGames\header()\filter,0,#PB_String_NoCase)>0
+            found=#True
+          EndIf
+          
+          If found = #False
+            ForEach games()\AlternateTitle()
+              If FindString(games()\AlternateTitle(),ListGames\header()\filter,0,#PB_String_NoCase)>0
+                found=#True
+                Break
+              EndIf
+            Next
+          EndIf
+          
+          If Not found
             filterd=#True
             Break
           EndIf
+          
           
         Else
           If FindString(GetGameOffset(@games(),ListGames\header()\offset),ListGames\header()\filter,0,#PB_String_NoCase)<=0
@@ -1138,7 +1464,7 @@ Procedure CreateGameList()
     If filterd=#False
       AddElement(ListGames\lgames())
       ListGames\lgames()\game=@games()
-      ListGames\lgames()\sort=GetGameOffset(@games(),ListGames\offset,#True)+"|"+games()\SortTitle
+      ListGames\lgames()\sort=GetGameOffset(@games(),ListGames\offset,#True)+"|"+GetGameOffset(@games(),#offset_title,#True)
     EndIf
   Next  
   SortStructuredList(ListGames\lgames(),ListGames\sort|#PB_Sort_NoCase,OffsetOf(slist\sort),#PB_String)  
@@ -1253,20 +1579,65 @@ EndProcedure
 
     
 Procedure LoadBoxArt(*game.sGame)
-  Protected file.s=""
+  Protected file.s, id.s
+  
+  If config\TitleLang=#LANG_GERMAN
+    If config\ListView=#listview_3Dboxart And FirstElement(*game\Images("Box 3D German")\Image() )
+      file=*game\Images("Box 3D German")\Image()
+      id=makeFilename(*game\Title)+"_"+*game\id+"_3dde"
+      
+    ElseIf (config\ListView=#listview_3Dboxart Or config\ListView = #listview_boxart) And FirstElement(*game\Images("Box Front German")\Image() )
+      file=*game\Images("Box Front German")\Image()
+      id=makeFilename(*game\Title)+"_"+*game\id+"_bade"
+      
+    ElseIf (config\ListView=#listview_3Dboxart Or config\ListView = #listview_boxart Or config\ListView = #listview_title) And FirstElement(*game\Images("Game Title German")\Image() )
+      file=*game\Images("Game Title German")\Image()
+      id=makeFilename(*game\Title)+"_"+*game\id+"_tide"
+      
+      
+    EndIf
+  EndIf
+    
+  If file="" Or id=""
+    If config\ListView=#listview_3Dboxart And FirstElement(*game\Images("Box 3D")\Image() )
+      file=*game\Images("Box 3D")\Image()
+      id=makeFilename(*game\Title)+"_"+*game\id+"_3d"
+      
+    ElseIf (config\ListView=#listview_3Dboxart Or config\ListView = #listview_boxart) And FirstElement(*game\Images("Box Front")\Image() )
+      file=*game\Images("Box Front")\Image()
+      id=makeFilename(*game\Title)+"_"+*game\id+"_ba"
+      
+    ElseIf (config\ListView=#listview_3Dboxart Or config\ListView = #listview_boxart Or config\ListView = #listview_title) And FirstElement(*game\Images("Game Title")\Image() )
+      file=*game\Images("Game Title")\Image()
+      id=makeFilename(*game\Title)+"_"+*game\id+"_ti"
+      
+    ElseIf FirstElement(*game\Images("Screenshot")\Image() )
+      file=*game\Images("Screenshot")\Image()
+      id=makeFilename(*game\Title)+"_"+*game\id+"_sc"
+    EndIf
+  EndIf
+  
+  If config\ListViewSize
+    id+config\ListViewSize
+  EndIf
+  
   
   LockMutex(mutexImage)
   Protected img
+  Protected baw,bah
+  baw=config\BoxArt[config\ListViewSize]\width
+  bah=config\BoxArt[config\ListViewSize]\height
+  
   ForEach imageCache()
-    If imageCache()\gameid = *game\ID
+    If imageCache()\gameid = id
       imageCache()\time=ElapsedMilliseconds()
       img=imageCache()\imgid
        
       
-      If img And img<>imgQuestionmark And (ImageWidth(img)>config\BoxArt\width Or ImageHeight(img)>config\BoxArt\height)
-        SizeImageBox(img,config\BoxArt\width,config\BoxArt\height)
-        If config\BoxArtCache          
-          SaveImage(img,"BoxArt.Cache\"+ *game\id +".png",#PB_ImagePlugin_PNG)
+      If img And img<>imgQuestionmark And (ImageWidth(img)>baw Or ImageHeight(img)>bah)
+        SizeImageBox(img,baw,bah)
+        If config\BoxArtCache       
+          SaveImage(img,"BoxArt.Cache\"+ id +".jpg",#PB_ImagePlugin_JPEG)
         EndIf
       EndIf
       UnlockMutex(mutexImage)     
@@ -1276,22 +1647,23 @@ Procedure LoadBoxArt(*game.sGame)
     
   Next
   
-   While ListSize(imageCache())>config\maxBoxArt    
-     Protected *oldest=#Null,oldtime=ElapsedMilliseconds()
-     ForEach imageCache()      
-       If imageCache()\imgid<>0 And imageCache()\time<oldtime
-         *oldest=imageCache()
-         oldtime=imageCache()\time
-       EndIf      
-     Next
-     
-     If *oldest
-       ChangeCurrentElement(imageCache(),*oldest)
-       DeleteElement(imageCache())
-     Else
-       Break
-     EndIf    
-   Wend
+  ; delete oldest cache
+  While ListSize(imageCache())>config\maxBoxArt    
+    Protected *oldest=#Null,oldtime=ElapsedMilliseconds()
+    ForEach imageCache()      
+      If imageCache()\imgid<>0 And imageCache()\time<oldtime
+        *oldest=imageCache()
+        oldtime=imageCache()\time
+      EndIf      
+    Next
+    
+    If *oldest
+      ChangeCurrentElement(imageCache(),*oldest)
+      DeleteElement(imageCache())
+    Else
+      Break
+    EndIf    
+  Wend
   
   
   UnlockMutex(mutexImage)
@@ -1300,31 +1672,24 @@ Procedure LoadBoxArt(*game.sGame)
   
   LockMutex(mutexImage)
   AddElement(imageCache())
-  imageCache()\gameid=*game\ID  
+  imageCache()\gameid=id
   imageCache()\time=ElapsedMilliseconds()
   
-  file="BoxArt.Cache\"+*game\ID+".png"
+  Protected cfile.s="BoxArt.Cache\"+id+".jpg"
   img=#Null
-  If FileSize(file)>0 
-    img=LoadImage(#PB_Any,file)
+  If FileSize(cfile)>0 
+    img=LoadImage(#PB_Any,cfile)
     If img 
       imageCache()\imgid=img        
    EndIf
   EndIf  
   
   If img=#Null  
-    If FirstElement(*game\Images("Box 3D")\Image() )
-      file=*game\Images("Box 3D")\Image()
-    ElseIf FirstElement(*game\Images("Box")\Image() )
-      file=*game\Images("Box")\Image()
-    ElseIf FirstElement(*game\Images("Screenshot")\Image() )
-      file=*game\Images("Screenshot")\Image()
-    EndIf 
-    
+   
     AddElement(imageToLoad())
     imageToLoad()\file=file
     imageToLoad()\imageCache=@imageCache()
-    imageToLoad()\gameid=*game\ID
+    imageToLoad()\gameid=id
     
   EndIf
   
@@ -1543,16 +1908,18 @@ Procedure DrawList()
     
     
     
-    If config\ListView=#listview_boxart;-- boxview
+    If config\ListView=#listview_boxart Or config\ListView=#listview_3Dboxart Or config\ListView=#listview_title;-- boxview
       
       UnclipOutput()
       DrawingMode(#PB_2DDrawing_Transparent )
       
-      Protected ww,hh,bw,bh
+      Protected ww,hh,bw,bh,baw,bah
+      baw=config\BoxArt[config\ListViewSize]\width
+      bah=config\BoxArt[config\ListViewSize]\height
       ww=w-sbar_width
       hh=h-ListGames\headerSize
-      bw=ww/(config\BoxArt\width+10)
-      bh=hh/(config\BoxArt\height+10)
+      bw=ww/(baw+10)
+      bh=hh/(bah+10)
       
       count=bw*bh
       
@@ -1560,8 +1927,8 @@ Procedure DrawList()
       ListGames\entriesLines=bw
       
       y=ListGames\headerSize
-      x=(ww-(bw * (config\BoxArt\width+10)))/2
-      y=ListGames\headerSize + (hh-(bh * (config\BoxArt\height+10)))/2
+      x=(ww-(bw * (baw+10)))/2
+      y=ListGames\headerSize + (hh-(bh * (bah+10)))/2
       Protected pos=(ListGames\position / bw)*bw
       SelectElement(ListGames\lgames(),pos)
       pos=pos%bw
@@ -1570,37 +1937,41 @@ Procedure DrawList()
       
       While ListIndex(ListGames\lgames())>=0 And y<h And count>0
         
-        xx=x+pos*(config\BoxArt\width+10)
-        ClipOutput(xx,y,config\BoxArt\width+10,config\BoxArt\height+10)
+        xx=x+pos*(baw+10)
+        ClipOutput(xx,y,baw+10,bah+10)
         
         If ListGames\selected=ListIndex(ListGames\lgames())
           DrawingMode(#PB_2DDrawing_Gradient)
           FrontColor(RGB(0,0,80))
           BackColor(RGB(0,0,70))
-          Box(xx,y,config\BoxArt\width+10,config\BoxArt\height+10)
+          Box(xx,y,baw+10,bah+10)
           DrawingMode(#PB_2DDrawing_Transparent )
-        ElseIf ListGames\drag=#drag_none And mx>=xx And mx<xx+config\BoxArt\width+10 And my>=y And my<y+config\BoxArt\height+10
+        ElseIf ListGames\drag=#drag_none And mx>=xx And mx<xx+baw+10 And my>=y And my<y+bah+10
           DrawingMode(#PB_2DDrawing_Gradient)
           FrontColor(RGB(60,60,60))
           BackColor(RGB(50,50,50))
-          Box(xx,y,config\BoxArt\width+10,config\BoxArt\height+10)
+          Box(xx,y,baw+10,bah+10)
           DrawingMode(#PB_2DDrawing_Transparent )
         EndIf
         
-        If mx>=xx And mx<xx+config\BoxArt\width+10 And my>=y And my<y+config\BoxArt\height+10
-          hotx=xx+config\BoxArt\width / 2+5
-          hoty=y+config\BoxArt\height+10
-          hottxt=ListGames\lgames()\game\Title          
+        If mx>=xx And mx<xx+baw+10 And my>=y And my<y+bah+10
+          hotx=xx+baw / 2+5
+          hoty=y+bah+10
+          If config\TitleLang = #LANG_GERMAN And ListGames\lgames()\game\TitleGerman<>""
+            hottxt=ListGames\lgames()\game\TitleGerman
+          Else
+            hottxt=ListGames\lgames()\game\Title          
+          EndIf
         EndIf
         
-        AddHotlist(xx,y,xx+config\BoxArt\width+9,y+config\BoxArt\height+9,#action_entry,ListIndex(ListGames\lgames()))
+        AddHotlist(xx,y,xx+baw+9,y+bah+9,#action_entry,ListIndex(ListGames\lgames()))
         
         Protected img=LoadBoxArt(ListGames\lgames()\game)
         If img=0 
           img=imgLoading
         EndIf        
         
-        DrawAlphaImage(ImageID(img),xx+ (config\BoxArt\width+10 - ImageWidth(img))/2, y+(config\BoxArt\height+10-ImageHeight(img))/2)
+        DrawAlphaImage(ImageID(img),xx+ (baw+10 - ImageWidth(img))/2, y+(bah+10-ImageHeight(img))/2)
         
         Protected dx=xx+5
         If favorite(ListGames\lgames()\game\id)
@@ -1620,7 +1991,7 @@ Procedure DrawList()
         count-1
         pos=(pos + 1)% bw
         If pos=0
-          y+config\BoxArt\height+10
+          y+bah+10
         EndIf
         If NextElement(ListGames\lgames())=0
           Break
@@ -1726,7 +2097,7 @@ Procedure updateMusic(*currentgame.sGame)
     Select LCase(GetExtensionPart(file))
         
       Case "ogg","flac"    
-        sSound=LoadSound(#PB_Any, file ,#PB_Sound_Streaming)
+        sSound=LoadSound(#PB_Any, file); ,#PB_Sound_Streaming)
         
       Case "wav"    
         sSound=LoadSound(#PB_Any, file )
@@ -1803,7 +2174,9 @@ Structure sMenu
 EndStructure
 Global NewList menu.sMenu()
 
-
+;-
+;- popup-menu
+;-
 
 Procedure _menuitem(text.s,action,value.s)
   AddElement(menu())
@@ -1872,8 +2245,10 @@ Procedure initPopupmenu()
   Global popConfigGerman=_menuitem("",#hl_config,"!german\")
   Global popAltGerman=_menuitem("",#hl_alternateLauncher,"!german\")
   
-  Global popViewDetails=_menuitem("",#hl_view,"Detail")
-  Global popViewBoxArt=_menuitem("",#hl_view,"BoxArt")
+  Global popViewDetails=_menuitem("",#hl_view,""+#listview_detail)
+  Global popView3DBoxArt=_menuitem("",#hl_view,""+#listview_3Dboxart)
+  Global popViewBoxArt=_menuitem("",#hl_view,""+#listview_boxart)
+  Global popViewtitle=_menuitem("",#hl_view,""+#listview_title)
   Global popEnglish=_menuitem("",#hl_none,"")
   Global popGerman=_menuitem("",#hl_none,"")
   Global popFavorite=_menuitem("",#hl_toogleFavorite,"")
@@ -1884,7 +2259,63 @@ Procedure initPopupmenu()
   Global popOpenGameFolderGerman=_menuitem("",#hl_openGameFolderGerman,"")
   Global popOpenNotGameFolder=_menuitem("",#hl_openNotGameFolder,"")
   Global popAutomaticMinimize=_menuitem("",#hl_AutomaticMinimize,"")
+  Global popTitleLangEnglish=_menuitem("",#hl_TitleLang,""+#LANG_ENGLISH)
+  Global popTitleLangGerman=_menuitem("",#hl_TitleLang,""+#LANG_GERMAN)
+  Global popViewSizeSmall=_menuitem("",#hl_viewSize,"0")
+  Global popViewSizeNormal=_menuitem("",#hl_ViewSize,"1")
+  Global popViewSizeBig=_menuitem("",#hl_ViewSize,"2")
+  Global popUseOriginalBatch=_menuitem("",#hl_UseOriginalBatch,"")
+  Global popPatchInteractiveGerman=_menuitem("",#hl_patchInteractive,""+#LANG_GERMAN)
+  Global popPatchInteractiveEnglish=_menuitem("",#hl_patchInteractive,""+#LANG_ENGLISH)
+  Global popPatchEnglishRunBat=_menuitem("",#hl_patchRunBat,""+#LANG_ENGLISH)
+  Global popPatchGermanRunBat=_menuitem("",#hl_patchRunBat,""+#LANG_GERMAN)
+  Global popOpenEnglishSetupFolder=_menuitem("",#hl_openSetupFolder,""+#LANG_ENGLISH)
+  Global popOpenGermanSetupFolder=_menuitem("",#hl_openSetupFolder,""+#LANG_GERMAN)
 EndProcedure
+
+Macro _addPopListview(mpopup)
+  OpenSubMenu("View")
+  MenuItem(popViewDetails,"List")
+  MenuItem(popView3dBoxArt,"3D Box Art")
+  MenuItem(popViewBoxArt,"Box Art")
+  MenuItem(popViewtitle,"Title Screen")
+  MenuBar()
+  MenuItem(popViewSizeSmall,"Small")
+  MenuItem(popViewSizeNormal,"Normal")
+  MenuItem(popViewSizeBig,"Big")
+  CloseSubMenu()
+      
+  If config\ListView=#listview_detail
+    SetMenuItemState(mpopup,popViewDetails,#True)
+  ElseIf config\ListView=#listview_3Dboxart
+    SetMenuItemState(mpopup,popView3dBoxArt,#True)
+  ElseIf config\ListView=#listview_boxart
+    SetMenuItemState(mpopup,popViewBoxArt,#True)
+  ElseIf config\ListView=#listview_title
+    SetMenuItemState(mpopup,popViewtitle,#True)
+  EndIf
+  
+  If config\ListViewSize=2
+    SetMenuItemState(mpopup,popViewSizeBig,#True)
+  ElseIf config\ListViewSize=1
+    SetMenuItemState(mpopup,popViewsizeNormal,#True)
+  Else
+    SetMenuItemState(mpopup,popViewSizeSmall,#True)
+  EndIf
+  
+EndMacro
+Macro _addPopTitleLang(mpopup)
+  OpenSubMenu("Title Language")
+  MenuItem(popTitleLangEnglish,"English / Default")
+  MenuItem(popTitleLangGerman,"German")
+  CloseSubMenu()
+  
+  If config\TitleLang=#LANG_GERMAN
+    SetMenuItemState(mpopup,popTitleLangGerman,#True)
+  Else
+    SetMenuItemState(mpopup,popTitleLangEnglish,#True)
+  EndIf  
+EndMacro
 
 Procedure DisplayGamePopup(*game.sgame,x=#PB_Ignore,y=#PB_Ignore)
   Static mpopup
@@ -1909,7 +2340,7 @@ Procedure DisplayGamePopup(*game.sgame,x=#PB_Ignore,y=#PB_Ignore)
       MenuItem(popConfig,"Config/Deinstall")
       MenuItem(popAlt,"Alternate Launcher")
       
-    Else
+    ElseIf *game\hasEnglishInstallFiles
       MenuItem(popPlay,"Install and Play")
     EndIf
     
@@ -1933,18 +2364,9 @@ Procedure DisplayGamePopup(*game.sgame,x=#PB_Ignore,y=#PB_Ignore)
     MenuBar()
   EndIf
   
-  OpenSubMenu("View")
-  MenuItem(popViewDetails,"List")
-  MenuItem(popViewBoxArt,"Box Art")
-  CloseSubMenu()
+  _addPopListview(mpopup)
+  _addPopTitleLang(mpopup)
   
-  
-  
-  If config\ListView=#listview_detail
-    SetMenuItemState(mpopup,popViewDetails,#True)
-  Else
-    SetMenuItemState(mpopup,popViewBoxArt,#True)
-  EndIf
   
   If x=#PB_Ignore Or y=#PB_Ignore
     DisplayPopupMenu(mpopup,WindowID(mainwindow))
@@ -1959,6 +2381,8 @@ Procedure DisplayGameStartPopup(*game.sgame,x=#PB_Ignore,y=#PB_Ignore)
     FreeMenu(mpopup)
   EndIf
   
+  
+  
   mpopup=CreatePopupMenu(#PB_Any)
   
   If *game
@@ -1967,7 +2391,7 @@ Procedure DisplayGameStartPopup(*game.sgame,x=#PB_Ignore,y=#PB_Ignore)
       MenuItem(popPlay,"Open")      
     ElseIf *game\installedEnglish
       MenuItem(popPlay,"Play (english)")      
-    Else
+    ElseIf *game\hasEnglishInstallFiles
       MenuItem(popPlay,"Install and Play (english)")
     EndIf
     
@@ -1995,7 +2419,7 @@ Procedure DisplayGameConfigPopup(*game.sgame,x=#PB_Ignore,y=#PB_Ignore)
   EndIf
   
   mpopup=CreatePopupMenu(#PB_Any)
-  
+ 
   If *game
     If *game\hasGerman
       MenuItem(popEnglish,"English")
@@ -2008,9 +2432,16 @@ Procedure DisplayGameConfigPopup(*game.sgame,x=#PB_Ignore,y=#PB_Ignore)
     ElseIf *game\installedEnglish
       MenuItem(popConfig,"Config/Deinstall")
       MenuItem(popOpenGameFolder,"Open game folder")
+      MenuItem(popOpenEnglishSetupFolder,"Open setup folder")
+      If *game\hasExceptionBat
+        MenuItem(popPatchInteractiveEnglish,"Patch exception batch")
+      EndIf
+      MenuItem(popPatchEnglishRunBat,"Patch run batch (dosbox/sound)")
       
-    Else
-      MenuItem(popPlay,"Install and Play")
+      
+    ElseIf *game\hasEnglishInstallFiles
+      MenuItem(popConfig,"Install")
+      MenuItem(popOpenEnglishSetupFolder,"Open setup folder")
     EndIf
     
     If *game\hasGerman
@@ -2020,9 +2451,16 @@ Procedure DisplayGameConfigPopup(*game.sgame,x=#PB_Ignore,y=#PB_Ignore)
       If *game\installedGerman
         MenuItem(popConfigGerman,"Config/Deinstall")
         MenuItem(popOpenGameFolderGerman,"Open game folder")
+        MenuItem(popOpenGermanSetupFolder,"Open setup folder")
+        
+        If *game\hasExceptionBat
+          MenuItem(popPatchInteractiveGerman,"Patch exception batch")
+        EndIf
+        MenuItem(popPatchGermanRunBat,"Patch run batch (dosbox/sound)")
         
       Else
-        MenuItem(popPlayGerman,"Install and Play")
+        MenuItem(popConfigGerman,"Install")
+        MenuItem(popOpenGermanSetupFolder,"Open setup folder")
       EndIf
     EndIf
     MenuBar()
@@ -2032,32 +2470,29 @@ Procedure DisplayGameConfigPopup(*game.sgame,x=#PB_Ignore,y=#PB_Ignore)
   EndIf
   
   
-  OpenSubMenu("View")
-  MenuItem(popViewDetails,"List")
-  MenuItem(popViewBoxArt,"Box Art")
-  CloseSubMenu()
+  _addPopListview(mpopup)
+  _addPopTitleLang(mpopup)
+  
   OpenSubMenu("Intro")
   MenuItem(popIntroPic,"Picture")
   MenuItem(popIntroVideo,"Video")
   CloseSubMenu()
-  MenuItem(popNoMusic,"Mute background music")
-  MenuItem(popAutomaticMinimize,"Automatic minimize on game launch")
-  
-  SetMenuItemState(mpopup,popAutomaticMinimize,config\AutomaticMinimize)
-  
   If config\nointro=1
     SetMenuItemState(mpopup,popIntroPic,#True)
   Else
     SetMenuItemState(mpopup,popIntroVideo,#True)
   EndIf
   
+  MenuItem(popNoMusic,"Mute background music")
   SetMenuItemState(mpopup,popNoMusic, config\volume\noSound)
+  
+  MenuItem(popAutomaticMinimize,"Automatic minimize on game launch")  
+  SetMenuItemState(mpopup,popAutomaticMinimize,config\AutomaticMinimize)
+  
+  MenuItem(popUseOriginalBatch,"Use unpatched batch")
+  SetMenuItemState(mpopup,popUseOriginalBatch,config\UseOriginalBatch)  
       
-  If config\ListView=#listview_detail
-    SetMenuItemState(mpopup,popViewDetails,#True)
-  Else
-    SetMenuItemState(mpopup,popViewBoxArt,#True)
-  EndIf
+
   
   If x=#PB_Ignore Or y=#PB_Ignore
     DisplayPopupMenu(mpopup,WindowID(mainwindow))
@@ -2065,6 +2500,295 @@ Procedure DisplayGameConfigPopup(*game.sgame,x=#PB_Ignore,y=#PB_Ignore)
     DisplayPopupMenu(mpopup,WindowID(mainwindow),x,y)
   EndIf
 EndProcedure
+;-
+;- patch interactive
+;-
+Macro __GotoLabel(labeltxt)
+  label=labeltxt
+  If Left(label,1)=":"
+    label=Mid(label,2)
+  EndIf
+  label=LCase(Trim(label))
+  
+  If FindMapElement(label(),label)
+    SelectElement(text(),label())
+  Else
+    LastElement(text())
+  EndIf
+EndMacro
+
+Procedure PatchInteractive(file.s,outFile.s,isrunbat.i=#False)
+  NewList text.s()
+  NewMap label()
+
+  
+  ;read file
+  Protected in=ReadFile(#PB_Any,file)
+  If in=0
+    ProcedureReturn #False
+  EndIf
+  
+  Protected l.s
+  While Not Eof(in)
+    l=ReadString(in)
+    
+    AddElement(text())
+    text()=l
+    
+    If Left(l,1)=":"
+      label(LCase(Mid(l,2)))=ListIndex(text())
+    EndIf
+    
+  Wend
+  CloseFile(in)
+  
+  NewList screen.s()
+  FirstElement(text())
+  
+  Protected t.s,cmd.s,pos,npos,label.s
+  Protected errcode=0
+  
+  Protected removeCopyDel=#False,gad_RemoveCopyDel
+  
+  Repeat
+    l=text()
+    If Left(l,1)="@"
+      l=Mid(l,2)
+    EndIf
+    
+    cmd=GetFilePart(LCase(StringField(l,1," ")))
+    
+    Select cmd
+      Case "cls"
+        ClearList(screen())
+        
+      Case "echo"
+        t=Trim(Mid(l,5))
+        If t<>"off"      
+          AddElement(screen())
+          screen()=ReplaceString(t,"^&","&")
+        EndIf
+        
+      Case "echo."
+        If ListSize(screen())>0
+          AddElement(screen())
+          screen()=" "
+        EndIf
+                
+      Case "choice","pause"
+        
+        Protected key.s
+        
+        l+" "
+        If cmd="pause"
+          key=""
+        Else
+          ;phrase choice command
+          pos=FindString(l," ")+1
+          key="YN"
+          Repeat
+            npos=FindString(l," ",pos)
+            If npos<pos
+              Break
+            EndIf
+            t=LCase(Mid(l,pos,2))
+            
+            Select t
+              Case "/c"
+                key.s=Mid(l,pos+2,npos-pos-2)
+                If Left(key,1)=":"
+                  key=Mid(key,2)
+                EndIf
+              Case "/s","/t","/n"
+                ;ignore
+              Default
+                AddElement(screen())
+                screen()=" "
+                AddElement(screen())
+                screen()=Trim(Mid(l,pos))
+                Break
+            EndSelect
+            pos=npos+1
+          ForEver
+        EndIf
+        
+        Protected win=OpenWindow(#PB_Any,0,0,100,100,"exception.bat",#PB_Window_Invisible|#PB_Window_SystemMenu,WindowID(mainwindow))
+        DisableWindow(mainwindow,#True)
+        SetWindowColor(win,#Black)
+        
+        Protected g_width=0,x=0,y=5,gad,w,h,i
+        
+        ForEach screen()        
+          gad=TextGadget(#PB_Any,5,y,10,10,screen())
+          SetGadgetFont(gad,FontID(fConsola))
+          
+          w=GadgetWidth(gad,#PB_Gadget_RequiredSize)
+          h=GadgetHeight(gad,#PB_Gadget_RequiredSize)
+          
+          ResizeGadget(gad,#PB_Ignore,#PB_Ignore,w,h)
+          SetGadgetColor(gad,#PB_Gadget_FrontColor,#White)
+          SetGadgetColor(gad,#PB_Gadget_BackColor,#Black)
+          If g_width<w+y
+            g_width=w+y
+          EndIf
+          y+h
+        Next
+        x=5
+        
+        If key<>""
+          For i=1 To Len(key)
+            gad=ButtonGadget(#PB_Any,x,y,30,20,Mid(key,i,1))
+            SetGadgetData(gad,i)
+            x+30+5
+          Next
+          
+          x+100+20+5
+          
+          If g_width<x
+            g_width=x
+          EndIf
+          
+          gad=ButtonGadget(#PB_Any,g_width-100-5,y,100,20,"Reset")
+          SetGadgetData(gad,-1)
+          y+20
+          y+5
+          If isrunbat
+            gad_RemoveCopyDel = CheckBoxGadget(#PB_Any,0,y,g_width+5,25,"Remove all copy and delete commands.")
+            SetGadgetState(gad_RemoveCopyDel,removeCopyDel)
+            SetGadgetData(gad_RemoveCopyDel,0)
+            y+20            
+          EndIf
+          
+        Else
+          gad=ButtonGadget(#PB_Any,g_width/2-50,y,100,20,"OK")
+          SetGadgetData(gad,-2)
+          y+20
+           y+5
+        EndIf        
+        
+        
+        
+       
+        ResizeWindow(win,#PB_Ignore,#PB_Ignore,g_width+5,y+5)
+        HideWindow(win,#False,#PB_Window_WindowCentered)
+        
+        errcode=0
+        Repeat
+          Protected event=WaitWindowEvent()
+          If event=#PB_Event_Gadget
+            i=GetGadgetData(EventGadget())
+            If i=-1
+              DeleteFile(outFile)
+              DisableWindow(mainwindow,#False)
+              CloseWindow(win)
+              ProcedureReturn #False
+              
+            ElseIf i>0 And i<=Len(key)
+              errcode=i
+              Break
+            ElseIf i<>0
+              Break
+            EndIf
+            
+          ElseIf event= #PB_Event_CloseWindow
+            DisableWindow(mainwindow,#False)
+            CloseWindow(win)
+            ProcedureReturn #False
+          EndIf
+          
+        ForEver
+        
+        If isrunbat
+          removeCopyDel=GetGadgetState(gad_RemoveCopyDel)
+        EndIf
+        
+        DisableWindow(mainwindow,#False)
+        CloseWindow(win)
+        
+        text()="rem "+text()
+        
+        ClearList(screen())
+        
+        
+        
+      Case "goto"
+        __GotoLabel(StringField(text(),2," "))
+        
+        
+      Case "if"
+        
+        l+" "
+        pos=FindString(l," ")+1
+        
+        npos=FindString(l," ",pos)
+        t=LCase(Mid(l,pos,npos-pos))
+        pos=npos+1
+        
+        If Left(t,11)="errorlevel="
+          pos=pos - Len(t)+10
+          If Mid(l,pos,1)=" "
+            pos+1
+          EndIf
+          t="errorlevel"
+        EndIf
+        
+        If t="errorlevel" And errcode>0
+          
+          npos=FindString(l," ",pos)
+          t=Mid(l,pos,npos-pos)
+          pos=npos+1
+   
+          If t="="
+            npos=FindString(l," ",pos)
+            t=Mid(l,pos,npos-pos)
+            pos=npos+1
+          EndIf
+             
+          text()="if "+errcode+" == "+t+" "+Mid(text(),pos)
+          
+          If Val(t)=errcode
+            errcode=0
+            npos=FindString(l," ",pos)
+            t=Mid(l,pos,npos-pos)
+            pos=npos+1
+            If LCase(t)="goto"
+              npos=FindString(l," ",pos)
+              __GotoLabel(Mid(l,pos,npos-pos))            
+            EndIf
+            
+          EndIf
+          
+        EndIf
+        
+      Default
+    EndSelect
+    
+  Until NextElement(text())=0
+  
+  
+  
+  Protected out=CreateFile(#PB_Any,outFile)
+  If out=0
+    ProcedureReturn #False
+  EndIf
+  
+  ForEach text()
+    If removeCopyDel
+      If Left(Trim(text()),5)="copy " Or Left(Trim(text()),4)="del "
+        text()="rem "+text()
+      EndIf
+    EndIf
+    
+    WriteStringN(out, text())
+  Next
+  CloseFile(out)
+  ProcedureReturn #True
+EndProcedure
+
+;-
+;-
+;-
+
 
 Procedure ScanInstalled()
   Protected pfad.s=config\eXoDOSpath
@@ -2138,6 +2862,8 @@ Procedure CheckInstalledGerman(*game.sgame)
   ProcedureReturn Bool( *game\eXoID<>"" And FileSize( pfad+"eXo\eXoDOS\!german\"+*game\eXoID)=-2 )
 EndProcedure
 
+
+
 Procedure IsGame(*game.sGame)
   ProcedureReturn Bool(*game\eXoID<>"")
 EndProcedure
@@ -2165,7 +2891,7 @@ Procedure ConClose()
   EndIf
 EndProcedure
 
-Procedure __makedir(dest.s)
+Procedure __makedir(dest.s,output=#True)
   Protected pfad.s,pos
   If Right(dest,1)<>"\"
     dest+"\"
@@ -2179,7 +2905,9 @@ Procedure __makedir(dest.s)
     pfad=Left(dest,pos)  
     
     If FileSize(pfad)<>-2
-      ConPrint("create "+pfad)
+      If output 
+        ConPrint("create "+pfad)
+      EndIf
       CreateDirectory(pfad)
     EndIf
   ForEver
@@ -2276,6 +3004,9 @@ addpatchinfo(":config",
 addPatchInfo(":none",
              ":none"+#CRLF$+"goto yes")
 
+addPatchInfo(".\util\ssr",
+             #DQUOTE$+"%GPI_EXO%\util\ssr"+#DQUOTE$)
+
 ; addPatchInfo("if %lang_cnt% gtr 1 goto yes",
 ;              "goto yes")
 ; 
@@ -2283,7 +3014,12 @@ addPatchInfo(":none",
 ;              "goto yes")
 
 addPatchInfo(":start",
-             ":start"+#CRLF$+".\util\setconsole.exe /minimize")
+             ":start"+#CRLF$+".\util\setconsole.exe /minimize"+#CRLF$+
+             ~"IF EXIST \"%GPI_EXCEPTION%%GameDir%.bat\" call \"%GPI_EXCEPTION%%GameDir%.bat\""+#CRLF$+
+             ~"IF EXIST \"%GPI_EXCEPTION%%GameDir%.bat\" goto end"+#CRLF$)
+
+addPatchInfo("pause",
+             "rem pause")
 
 
 
@@ -2293,7 +3029,7 @@ Procedure __patchBatch(file.s,outfile.s,*info.sConfigDateSize)
   
   Protected size=FileSize(file),moddate=GetFileDate(file,#PB_Date_Modified)
   
-  If FileSize(outfile)>0 And *info\size=size And *info\date=moddate
+  If FileSize(outfile)>0 And *info\size=size And *info\date=moddate And enforceCheckFiles=#False
     ProcedureReturn #True
   EndIf
   *info\size=size
@@ -2321,11 +3057,11 @@ Procedure __patchBatch(file.s,outfile.s,*info.sConfigDateSize)
 
 EndProcedure
 Procedure PatchExodosBatch()
-  __patchBatch(config\eXoDOSpath+"eXo\util\install.bat", "media\install.bat",config\batchs\install)
-  __patchBatch(config\eXoDOSpath+"eXo\util\launch.bat", "media\launch.bat",config\batchs\laucher)
+  __patchBatch(config\eXoDOSpath+"eXo\util\install.bat", "media\install.bat",@config\FileInfo("install.bat"))
+  __patchBatch(config\eXoDOSpath+"eXo\util\launch.bat", "media\launch.bat",@config\FileInfo("launch.bat"))
 
-  __patchBatch(config\eXoDOSpath+"eXo\util\!languagepacks\install.bat", "media\lang_install.bat",config\batchs\lang_install)
-  __patchBatch(config\eXoDOSpath+"eXo\util\!languagepacks\launch.bat", "media\lang_launch.bat",config\batchs\lang_laucher)
+  __patchBatch(config\eXoDOSpath+"eXo\util\!languagepacks\install.bat", "media\lang_install.bat",@config\FileInfo("lang_install.bat"))
+  __patchBatch(config\eXoDOSpath+"eXo\util\!languagepacks\launch.bat", "media\lang_launch.bat",@config\FileInfo("lang_launch.bat"))
 EndProcedure
 
 Procedure InitLocalInstall()
@@ -2340,15 +3076,15 @@ Procedure InitLocalInstall()
   __makedir("eXo\eXoDOS\!german\!save")
   __makedir("eXo\eXoDOS\!save")
   
-  If FileSize("eXo\emulators")=-1
+  If FileSize("eXo\emulators")=-1 Or enforceCheckFiles
     __copydir(config\eXoDOSpath+"eXo\emulators\","eXo\emulators\")
   EndIf
   
-  If FileSize("eXo\mt32")=-1
+  If FileSize("eXo\mt32")=-1 Or enforceCheckFiles
     __copydir(config\eXoDOSpath+"eXo\mt32\","eXo\mt32\")
   EndIf
   
-  If FileSize("eXo\util")=-1
+  If FileSize("eXo\util")=-1 Or enforceCheckFiles
     __copydir(config\eXoDOSpath+"eXo\util\","eXo\util\")
   EndIf
   
@@ -2360,8 +3096,12 @@ Procedure CopyGame(*game.sGame)
     ProcedureReturn #False
   EndIf
   
-  __copydir(config\eXoDOSpath+"eXo\eXoDOS\!dos\"+*game\eXoID+"\","eXo\eXoDOS\!dos\"+*game\eXoID+"\")
-  __copydir(config\eXoDOSpath+"eXo\eXoDOS\!dos\!german\"+*game\eXoID+"\","eXo\eXoDOS\!dos\!german\"+*game\eXoID+"\")
+  If FileSize("eXo\eXoDOS\!dos\"+*game\eXoID)<>-2
+    __copydir(config\eXoDOSpath+"eXo\eXoDOS\!dos\"+*game\eXoID+"\","eXo\eXoDOS\!dos\"+*game\eXoID+"\","Magazines")
+  EndIf
+  If FileSize("eXo\eXoDOS\!dos\!german\"+*game\eXoID)<>-2  
+    __copydir(config\eXoDOSpath+"eXo\eXoDOS\!dos\!german\"+*game\eXoID+"\","eXo\eXoDOS\!dos\!german\"+*game\eXoID+"\","Magazines")
+  EndIf
   
   If config\localMedias
     ForEach *game\Images()
@@ -2399,46 +3139,72 @@ Procedure DeleteFileEX(file.s)
 EndProcedure
 
 Procedure CheckRemoveGame(*game.sGame)
+  
   If *game\eXoID=""
-    ProcedureReturn
+    ProcedureReturn #False
   EndIf
   
   Protected wasInstalled=Bool(*game\installedEnglish Or *game\installedGerman)
   *game\installedGerman=CheckInstalledGerman(*game)
   *game\installedEnglish=CheckInstalledEnglish(*game)
   
-  
-  If config\localInstall And wasInstalled And *game\installedEnglish=#False And *game\installedGerman=#False
-    DeleteDirectory("eXo\eXoDOS\!dos\"+*game\eXoID+"\","*.*",#PB_FileSystem_Recursive|#PB_FileSystem_Force)
-    DeleteDirectory("eXo\eXoDOS\!dos\!german\"+*game\eXoID+"\","*.*",#PB_FileSystem_Recursive|#PB_FileSystem_Force)    
+  If config\localInstall
     
-    ForEach *game\Images()
-      ForEach *game\Images()\Image()
-        DeleteFileEx(*game\Images()\Image())
-      Next
-    Next  
+    ;create fake-zip-files for english
+    Protected file.s="eXo\eXoDOS\"+*game\eXoName+".zip"
+    If *game\installedEnglish
+      If FileSize(file)<0
+        Protected any=CreateFile(#PB_Any,file)
+        If any
+          CloseFile(any)
+        EndIf
+      EndIf
+    Else
+      If FileSize(file)=0
+        DeleteFile(file)
+      EndIf
+    EndIf  
     
-    If *game\MusicPath
-      DeleteFileEx(*game\MusicPath)
-    EndIf
-    If *game\ManualPath
-      DeleteFileEx(*game\ManualPath)
-    EndIf
-    If *game\MoviePath
-      DeleteFileEx(*game\MoviePath)
-    EndIf
     
+    If wasInstalled And *game\installedEnglish=#False And *game\installedGerman=#False
+      
+      DeleteDirectory("eXo\eXoDOS\!dos\"+*game\eXoID+"\","*.*",#PB_FileSystem_Recursive|#PB_FileSystem_Force)
+      DeleteDirectory("eXo\eXoDOS\!dos\!german\"+*game\eXoID+"\","*.*",#PB_FileSystem_Recursive|#PB_FileSystem_Force)    
+      
+      ForEach *game\Images()
+        ForEach *game\Images()\Image()
+          DeleteFileEx(*game\Images()\Image())
+        Next
+      Next  
+      
+      If *game\MusicPath
+        DeleteFileEx(*game\MusicPath)
+      EndIf
+      If *game\ManualPath
+        DeleteFileEx(*game\ManualPath)
+      EndIf
+      If *game\MoviePath
+        DeleteFileEx(*game\MoviePath)
+      EndIf
+    EndIf
+
   EndIf
+  
+  ProcedureReturn Bool( Not wasInstalled = Bool(*game\installedEnglish Or *game\installedGerman) )
   
 EndProcedure
 
+
+
+
 Procedure StartGameOriginal(*currentgame.sGame,language.s="")
   Protected pfad.s=config\eXoDOSpath
+    
   If *currentgame\eXoID<>"" And config\localInstall
     CopyGame(*currentgame)
     pfad=GetCurrentDirectory()
   EndIf    
-  
+      
   If *currentgame\eXoID<>""
     RunProgramEx(pfad+*currentgame\ApplicationPath,*currentgame\CommandLine,pfad+*currentgame\RootFolder)
   Else
@@ -2447,7 +3213,7 @@ Procedure StartGameOriginal(*currentgame.sGame,language.s="")
 EndProcedure
 
 Procedure StartGameEnglish(*currentgame.sGame)
-  If *currentgame\eXoID=""
+  If config\UseOriginalBatch Or *currentgame\eXoID="" 
     ProcedureReturn StartGameOriginal(*currentgame)
   EndIf
   
@@ -2461,6 +3227,7 @@ Procedure StartGameEnglish(*currentgame.sGame)
   SetEnvironmentVariable("GPI_EXO",config\eXoDOSpath+"\exo")
   SetEnvironmentVariable("GPI_INSTALL",GetCurrentDirectory()+"media\install.bat")
   SetEnvironmentVariable("GPI_Title","eXoDOS - "+ReplaceString(*currentgame\Title,"&"," and ")+" (english)")
+  SetEnvironmentVariable("GPI_EXCEPTION",GetCurrentDirectory()+"exception.bat\")
   
   
   SetEnvironmentVariable("var",pfad+"\eXoDOS\!dos\"+ *currentgame\eXoID )
@@ -2486,7 +3253,7 @@ Procedure StartGameEnglish(*currentgame.sGame)
 EndProcedure
 
 Procedure StartGameGerman(*currentgame.sGame)
-  If *currentgame\eXoID=""
+  If config\UseOriginalBatch Or *currentgame\eXoID=""
     ProcedureReturn StartGameOriginal(*currentgame)
   EndIf
   
@@ -2500,6 +3267,7 @@ Procedure StartGameGerman(*currentgame.sGame)
   SetEnvironmentVariable("GPI_EXO",config\eXoDOSpath+"\exo")
   SetEnvironmentVariable("GPI_INSTALL",GetCurrentDirectory()+"media\lang_install.bat")
   SetEnvironmentVariable("GPI_TITLE","eXoDOS - "+ReplaceString(*currentgame\Title,"&"," and ")+" (german)")
+  SetEnvironmentVariable("GPI_EXCEPTION",GetCurrentDirectory()+"exception.bat\!german\")
     
   SetEnvironmentVariable("var",pfad+"\eXoDOS\!dos\!german\"+ *currentgame\eXoID )
   SetEnvironmentVariable("GameDir", *currentgame\eXoID )
@@ -2538,7 +3306,11 @@ Procedure StartAlternateGame(*currentgame.sGame,language.s="")
 EndProcedure
 
 Procedure IntellgentStartGame(*currentgame.sGame,x=#PB_Ignore,y=#PB_Ignore)  
-  If *currentgame\HasGerman
+  
+  If config\UseOriginalBatch
+    StartGameOriginal(*currentgame)
+    
+  ElseIf *currentgame\HasGerman
 
     If *currentgame\installedGerman And Not *currentgame\installedEnglish
       StartGameGerman(*currentgame)
@@ -2568,7 +3340,7 @@ Procedure ConfigGameOriginal(*currentgame.sgame,language.s="")
 EndProcedure
 
 Procedure ConfigGameEnglish(*currentgame.sGame)
-  If *currentgame\eXoID=""
+  If config\UseOriginalBatch Or *currentgame\eXoID=""
     ProcedureReturn ConfigGameOriginal(*currentgame)
   EndIf
   
@@ -2596,7 +3368,7 @@ Procedure ConfigGameEnglish(*currentgame.sGame)
 EndProcedure
 
 Procedure ConfigGameGerman(*currentgame.sGame)
-  If *currentgame\eXoID=""
+  If config\UseOriginalBatch Or *currentgame\eXoID=""
     ProcedureReturn ConfigGameOriginal(*currentgame)
   EndIf
   
@@ -2697,7 +3469,12 @@ EndProcedure
 Procedure sanitycheck()
   NewList ignoreID.s()
   NewList germanID.s()
-  Protected id=LoadJSON(#PB_Any,"ignore.txt")
+  Protected id
+    
+  If Not enforceCheckFiles
+   id=LoadJSON(#PB_Any,"ignore.txt")
+  EndIf
+    
   If id
     ExtractJSONList(JSONValue(id), ignoreID())
     FreeJSON(id)
@@ -2773,8 +3550,217 @@ Procedure sanitycheck()
 
 EndProcedure
 
+Procedure _unpack(file.s,dest.s)  
+  Protected zip=OpenPack(#PB_Any,file,#PB_PackerPlugin_Zip  )
+  If zip=0
+    MessageRequester(#title,"Can't open update.zip")
+    End
+  EndIf
+  ExaminePack(zip)
+  While NextPackEntry(zip)
+    Protected name.s=ReplaceString(PackEntryName(zip),"/","\"); + ", Size: " + PackEntrySize(zip)
+    If Right(name,1)="\"
+      __makedir(dest+name)
+    Else      
+      
+      __makedir(GetPathPart(dest+name))      
+      
+      Protected dat=PackEntryDate(zip,#PB_Date_Modified)      
+      Protected size=PackEntrySize(zip)
+      If GetFileDate(dest+name,#PB_Date_Modified)<> dat Or FileSize(dest+name)<>size
+        ConPrint("unpack "+name+" "+CalculatePackTime(size))
+        PackTimeStart()
+        UncompressPackFile(zip,dest+name)
+        PackTimeEnd(size)
+                
+        If dat<>-1 
+          SetFileDate(dest+name,#PB_Date_Modified,dat)
+          SetFileDate(dest+name,#PB_Date_Created,dat)
+        EndIf
+      Else
+        ConPrint("already unpacked "+name)
+      EndIf
+      
+    EndIf
+  Wend
+  ClosePack(zip)
+EndProcedure
+Procedure RepairGameXML(file.s)
+  Protected in,out
+  Protected outfile.s=GetTemporaryDirectory()+GetFilePart(file)
+  
+  in=ReadFile(#PB_Any,file)
+  out=CreateFile(#PB_Any,outfile)
+  
+  Protected line.s,lastLine.s,tline.s
+  Protected l=0,firstLine=#True
+  While Not Eof(in)
+    line=ReadString(in)
+    tline=Trim(line)
+    
+    If firstLine And Left(tline,5)<>"<?xml" 
+      WriteStringN(out,"<?xml version="+#DQUOTE$+"1.0"+#DQUOTE$+" standalone="+#DQUOTE$+"yes"+#DQUOTE$+"?>"):l+1
+    EndIf
+    
+    If lastLine="<Game>" And tline="<Game>"
+      Debug "remove double line "+l
+    ElseIf lastline="</Game>" And (tline <>"<Game>" And tline <>"<AlternateName>" And tline<> "<AdditionalApplication>")
+      WriteStringN(out,"  <Game>"):l+1
+      WriteStringN(out,line):l+1
+      Debug "add missing game-tag "+l
+    Else
+      WriteStringN(out,line):l+1
+    EndIf
+    
+    lastLine=tline  
+    firstLine=#False
+  Wend
+  CloseFile(in)
+  CloseFile(out)    
+  
+  DeleteFile(file)
+  CopyFile(outfile,file)
+  DeleteFile(outfile)
+  
+EndProcedure
 
+Procedure CheckEXODOSUpdateInstalled()
+  Protected DoRepair=#False
+  If FileSize(config\eXoDOSpath+"update.zip")>0 And 
+     MessageRequester(#title,"eXoDOS-Update found!"+#LF$+"Install it?",#PB_MessageRequester_YesNo)=#PB_MessageRequester_Yes
+    
+    ConPrint("Unpack update")
+    
+    _unpack(config\eXoDOSpath+"update.zip",config\eXoDOSpath)
+    
+    If MessageRequester(#title,"Delete update.zip?",#PB_MessageRequester_YesNo)=#PB_MessageRequester_Yes
+      DeleteFile(config\eXoDOSpath+"update.zip")
+    EndIf
+    
+    DoRepair=#True
+    enforceCheckFiles=#True
+    forceUpdate=#True
+  EndIf
+  
+  
+  
+  
+  
+  If FileSize(config\eXoDOSpath+"\Content\eXoDOS_GLP_Addonpack_MagazinesGLP.zip")>0 And FileSize(config\eXoDOSpath+"\Content\eXoDOS_GLP_Addonpack_MagazinesGLP_1.0.zip")<0 And
+     MessageRequester(#title,"Found German Magazines, install it?"+#CRLF$+"WARNING, this takes a lot of time!",#PB_MessageRequester_YesNo)=#PB_MessageRequester_Yes
+    
+    ConPrint("Unpack MagazinesGLP")
+    _unpack(config\eXoDOSpath+"\Content\eXoDOS_GLP_Addonpack_MagazinesGLP.zip",config\eXoDOSpath)
+    _unpack(config\eXoDOSpath+"\Content\eXoDOS_GLP_Addonpack_MagazinesGLP_1.0.zip",config\eXoDOSpath)
+    
+    DoRepair=#True
+    enforceCheckFiles=#True
+  EndIf
+  
+  If config\patch\Mediapack_DE=#False
+    ConPrint("Add Missing German-Media-Pack-Files")
+    _unpack("media\Patch_Mediapack_DE.zip",config\eXoDOSpath)    
+    config\patch\Mediapack_DE=#True
+  EndIf
+  
+  
+  If DoRepair
+    ConPrint("Repair exodos-xml-files")
+    
+    RepairGameXML(config\eXoDOSpath+"xml\ALL\MS-DOS.XML")
+    
+    RunProgram(config\eXoDOSpath+"exo\util\eXoLBpm","-i - -"+#DQUOTE$+"MS-DOS Magazines &amp; Newsletters"+#DQUOTE$+" -Literature",config\eXoDOSpath+"exo\util",#PB_Program_Wait)
+    RunProgram(config\eXoDOSpath+"exo\util\eXoLBpm","-i - -"+#DQUOTE$+"MS-DOS Books"+#DQUOTE$+" -Literature",config\eXoDOSpath+"exo\util",#PB_Program_Wait)
+    RunProgram(config\eXoDOSpath+"exo\util\eXoLBpm","-i - -"+#DQUOTE$+"MS-DOS Catalogs"+#DQUOTE$+" -Literature",config\eXoDOSpath+"exo\util",#PB_Program_Wait)
+    RunProgram(config\eXoDOSpath+"exo\util\eXoLBpm","-i - -"+#DQUOTE$+"Soundtracks"+#DQUOTE$+" -Audio",config\eXoDOSpath+"exo\util",#PB_Program_Wait)
+    
+    __copydir(config\eXoDOSpath+"xml\ALL\",config\eXoDOSpath+"Data\Platforms\")
+    RunProgram(config\eXoDOSpath+"xml\merge_parents.bat","",config\eXoDOSpath+"xml",#PB_Program_Wait)
+    RunProgram(config\eXoDOSpath+"xml\merge_platforms.bat","",config\eXoDOSpath+"xml",#PB_Program_Wait)
+    
+    __copyfile(config\eXoDOSpath+"xml\Platforms.xml",config\eXoDOSpath+"Data\Platforms.xml")
+    __copyfile(config\eXoDOSpath+"xml\Parents.xml",config\eXoDOSpath+"Data\Parents.xml")
+    __copyfile(config\eXoDOSpath+"xml\all\MS-DOS.xml", config\eXoDOSpath+"Data\Platforms\MS-DOS.xml")
+    
+    If FileSize("media\MS-DOS Magazines & Newsletters.xml")<0 
+      __copyfile(config\eXoDOSpath+"Data\Platforms\MS-DOS Magazines & Newsletters.xml","media\MS-DOS Magazines & Newsletters.xml")
+    Else
+      __copyfile("media\MS-DOS Magazines & Newsletters.xml",config\eXoDOSpath+"Data\Platforms\MS-DOS Magazines & Newsletters.xml")
+    EndIf
+    
+    Protected path.s=config\eXoDOSpath
+    If Right(path,1)="\"
+      path=Left(path,Len(path)-1)
+    EndIf
+   
+    If FileSize(config\eXoDOSpath+"eXo\util\eXoLPPPM.exe")>0
+      Protected command.s="add "+#DQUOTE$+"eXoDOS german Language Pack games.xml"+#DQUOTE$+" "+#DQUOTE$+"MS-DOS"+#DQUOTE$+" "+#DQUOTE$+path+#DQUOTE$
+      RunProgram(config\eXoDOSpath+"eXo\util\eXoLPPPM.exe",command,config\eXoDOSpath,#PB_Program_Wait)
+      
+      command=#DQUOTE$+path+#DQUOTE$+" german DE LPindex.txt"
+      RunProgram(config\eXoDOSpath+"eXo\util\eXoLPLBXMLedit.exe",command,config\eXoDOSpath,#PB_Program_Wait)
+    EndIf
+    
+    If FileSize(config\eXoDOSpath+"eXo\util\eXoLPMagazinesPPM.exe")>0
+      Protected dir=ExamineDirectory(#PB_Any,config\eXoDOSpath+"xml\!german\magazines\playlists\","*.xml")
+      If dir
+        While NextDirectoryEntry(dir)
+          command="add "+#DQUOTE$+DirectoryEntryName(dir)+#DQUOTE$+" "+#DQUOTE$+"Literature"+#DQUOTE$+" "+#DQUOTE$+path+#DQUOTE$
+          RunProgram(config\eXoDOSpath+"eXo\util\eXoLPMagazinesPPM.exe",command,config\eXoDOSpath,#PB_Program_Wait)
+        Wend
+        FinishDirectory(dir)
+      EndIf
+      
+      command=#DQUOTE$+path+#DQUOTE$+" german DE LPMagazinesindex.txt"
+      RunProgram(config\eXoDOSpath+"eXo\util\eXoLPMagazinesLBXMLedit",command,config\eXoDOSpath,#PB_Program_Wait)
+      
+    EndIf
+    
+    RepairGameXML(config\eXoDOSpath+"Data\Platforms\MS-DOS.XML")
+    
+    DeleteFile("ignore.txt")
+    DeleteFile("german.txt")
+  EndIf
+  
+  ConClose()
+  
+EndProcedure
 
+Procedure UpdateGamesFiles()
+  If forceUpdate=#False
+    ProcedureReturn #False
+  EndIf
+  
+  Protected pfad.s=config\eXoDOSpath
+  If config\localInstall
+    pfad=GetCurrentDirectory()
+  EndIf
+  
+  ForEach games()
+    
+    If games()\installedEnglish
+      If FileSize(config\eXoDOSpath+"exo\update\!dos\"+ games()\eXoName +".zip")>0 
+        ConPrint("Patch "+ games()\Title)
+        _unpack(config\eXoDOSpath+"exo\update\!dos\"+ games()\eXoName +".zip", pfad+"exo\eXoDOS\")
+      EndIf
+    EndIf
+  Next
+  
+  
+EndProcedure 
+
+Procedure repairDosboxConf()
+  Protected pfad.s=config\eXoDOSpath
+  If config\localInstall
+    pfad=GetCurrentDirectory()
+  EndIf
+  
+  If FileSize(pfad+"eXo\emulators\dosbox\options.conf") <= 0
+    CopyFile("media\options.conf",pfad+"eXo\emulators\dosbox\options.conf")
+    Debug "REPAIR options.conf"
+  EndIf
+  
+EndProcedure
 
 
 ;-------start
@@ -2782,6 +3768,9 @@ EndProcedure
 
 
 loadConfig()
+
+CheckEXODOSUpdateInstalled()
+
 startintro()
 Define oldmusic=config\volume\noSound
 config\volume\noSound=#True
@@ -2799,6 +3788,7 @@ imgEnglish=LoadImage(#PB_Any,"Media\english-flag.png")
 imgGerman=LoadImage(#PB_Any,"Media\german-flag.png")
 
 fbig=LoadFont(#PB_Any,"Verdana",20)
+fConsola=LoadFont(#PB_Any,"Consolas",12)
 
 InitLocalInstall()
 loadGamesList()
@@ -2809,6 +3799,7 @@ CreateWindow()
 CreateGameList()
 initPopupmenu()
 loadOnce()
+repairDosboxConf()
 
 ;find last game
 Define *currentgame.sGame
@@ -2830,6 +3821,7 @@ Else
  *currentgame=games()
 EndIf
 
+CheckRemoveGame(*currentgame)
 updateGame(*currentgame)
 
 Global mGenre=popmenu(Once\Genre(),#hl_genre,"/",#False)
@@ -2838,12 +3830,17 @@ Global mReleaseDate=Popmenu(once\ReleaseDate(),#hl_ReleaseDate,"/",#False)
 Global mSource=popmenu(once\Source(),#hl_Source,"/",#False)
 Global mInstalled=popmenu(once\installed(),#hl_installed,"/",#False)
 Global mFavorite=popmenu(once\installed(),#hl_favorite,"/",#False)
-Global mGerman=popmenu(once\installed(),#hl_favorite,"/",#False)
+Global mExtras=popmenu(once\installed(),#hl_extras,"/",#False)
+Global mGerman=popmenu(once\installed(),#hl_german,"/",#False)
 Global mAdult=popmenu(once\installed(),#hl_adult,"/",#False)
 
 unloadOnce()
 
 Global threadHandle=CreateThread(@thread_imageloadCache(),0)
+
+
+
+UpdateGamesFiles()
 
 config\volume\noSound=oldmusic
 
@@ -2856,6 +3853,7 @@ Else
   HideWindow(mainwindow,#False)
 EndIf
 
+updateMusic(*currentgame)
 
 Define autominimize=#False
 Define autominimize_oldstate=0
@@ -2919,9 +3917,11 @@ Repeat
       
     Case #PB_Event_ActivateWindow;- activate window
       resumeMusic()
-      CheckRemoveGame(*currentgame)
-      updateGame(*currentgame)
-      DrawList()
+      If CheckRemoveGame(*currentgame)
+        CreateGameList()
+        updateGame(*currentgame)
+        DrawList()
+      EndIf
       
     Case #PB_Event_DeactivateWindow; deactivate window
       pauseMusic()
@@ -2929,8 +3929,90 @@ Repeat
     Case #PB_Event_Menu;-- menu
       SelectElement(menu(),EventMenu())      
       If ListIndex(menu())>=0
-        
         Select menu()\action
+          Case #hl_openSetupFolder
+            pfad.s=config\eXoDOSpath
+            If *currentgame\eXoID<>"" And config\localInstall
+              pfad=GetCurrentDirectory()
+            EndIf 
+            
+            Define pfadex.s
+            If Val(menu()\value)=#LANG_GERMAN
+              pfadex="exo\eXoDOS\!dos\!german\"+*currentgame\eXoID
+            Else
+              pfadex="exo\eXoDOS\!dos\"+*currentgame\eXoID
+            EndIf
+            
+            If FileSize(pfad+pfadex)=-2
+              RunProgram(pfad+pfadex)
+            ElseIf pfad<>config\eXoDOSpath
+              RunProgram(config\eXoDOSpath+pfadex)
+            EndIf
+            
+          Case #hl_patchRunBat
+            pfad.s=config\eXoDOSpath
+            If *currentgame\eXoID<>"" And config\localInstall
+              pfad=GetCurrentDirectory()
+            EndIf 
+            
+            If Val(menu()\value)=#LANG_GERMAN
+              pfad+"exo\eXoDOS\!german\"+*currentgame\eXoID+"\"
+            Else
+              pfad+"exo\eXoDOS\"+*currentgame\eXoID+"\"
+            EndIf
+            
+            Define file.s= pfad+"run.bat", key.s=*currentgame\eXoID+"_"+menu()\value
+            
+            If FindMapElement(config\patch\runbat(),key)
+              file=config\patch\runbat()
+            EndIf
+            
+            
+            Define file.s=OpenFileRequester(#title+" select run.bat",file,"run.bat|run.bat|*.bat|*.bat|all|*.*",0,0,WindowID(mainwindow))
+            If file And FileSize(file)>0
+              config\patch\runbat(key)=file
+              
+              If FileSize(file+".old")>0
+                CopyFile(file+".old",file)
+              Else
+                CopyFile(file,file+".old")
+              EndIf
+              
+              PatchInteractive(file+".old",file,#True)
+              
+              If FileSize(file)<0
+                CopyFile(file+".old",file)
+              EndIf
+            EndIf
+            
+            
+          Case #hl_patchInteractive
+            pfad.s=config\eXoDOSpath
+            If *currentgame\eXoID<>"" And config\localInstall
+              pfad=GetCurrentDirectory()
+            EndIf 
+            
+            If Val(menu()\value)=#LANG_GERMAN
+              __makedir("exception.bat\!german\",#False)
+              PatchInteractive(pfad+"eXo\eXoDOS\!dos\!german\"+*currentgame\eXoID+"\exception.bat", "exception.bat\!german\"+*currentgame\eXoID+".bat")
+            Else
+              __makedir("exception.bat\",#False)
+              PatchInteractive(pfad+"eXo\eXoDOS\!dos\"+*currentgame\eXoID+"\exception.bat", "exception.bat\"+*currentgame\eXoID+".bat")
+            EndIf
+            
+            
+          Case #hl_UseOriginalBatch
+            config\UseOriginalBatch=1-config\UseOriginalBatch
+            
+          Case #hl_viewSize
+            config\ListViewSize=Val( menu()\value )            
+            DrawList()
+            
+          Case #hl_TitleLang
+            config\TitleLang=Val( menu()\value )
+            CreateGameList()
+            updateGame(*currentgame)
+            DrawList()
             
           Case #hl_AutomaticMinimize
             config\AutomaticMinimize=1-config\AutomaticMinimize
@@ -2942,7 +4024,6 @@ Repeat
           Case #hl_openGameFolder
             pfad.s=config\eXoDOSpath
             If *currentgame\eXoID<>"" And config\localInstall
-              CopyGame(*currentgame)
               pfad=GetCurrentDirectory()
             EndIf    
             pfad+"exo\eXoDOS\"+*currentgame\eXoID
@@ -2988,7 +4069,11 @@ Repeat
           Case #hl_favorite
             findHeader(#offset_favorite)
             ListGames\header()\filter=menu()\value
-            CreateGameList()
+            drawlist() 
+            
+          Case #hl_extras
+            findHeader(#offset_extras)
+            ListGames\header()\filter=menu()\value
             drawlist() 
             
           Case #hl_german
@@ -3033,11 +4118,12 @@ Repeat
             StartAlternateGame(*currentgame,menu()\value)
             
           Case #hl_view
-            config\ListView=Bool( menu()\value<>"Detail" )
+            config\ListView=Val( menu()\value )
             DrawList()
             
            Case #hl_toogleFavorite
              favorite(*currentgame\ID)= 1-favorite(*currentgame\id)
+             CreateGameList()
              DrawList()
         EndSelect
         
@@ -3097,7 +4183,7 @@ Repeat
                 SelectElement(ListGames\header(),ListGames\keyboarfocus)
                 ListGames\header()\filter + Chr( GetGadgetAttribute(glist,#PB_Canvas_Input))
                 
-                If ListGames\header()\offset=#offset_installed Or ListGames\header()\offset=#offset_favorite Or ListGames\header()\offset=#offset_german Or ListGames\header()\offset=#offset_adult
+                If ListGames\header()\offset=#offset_installed Or ListGames\header()\offset=#offset_favorite Or ListGames\header()\offset=#offset_german Or ListGames\header()\offset=#offset_adult Or ListGames\header()\offset=#offset_extras
                   ListGames\header()\filter=Right(ListGames\header()\filter,1)
                   If ListGames\header()\filter<>" " 
                     ListGames\header()\filter="X"
@@ -3148,7 +4234,8 @@ Repeat
                   SelectElement(ListGames\lgames(),ListGames\selected)
                   *currentgame=ListGames\lgames()\game
                   ListEntryVisible()
-                  updateGame(*currentgame)                                
+                  CheckRemoveGame(*currentgame)
+                  updateGame(*currentgame)                  
                 EndIf
               EndIf
               
@@ -3266,6 +4353,8 @@ Repeat
                       m=mGerman
                     Case #offset_adult
                       m=mAdult
+                    Case #offset_extras
+                      m=mExtras
                   EndSelect
                   If m
                     DisplayPopupMenu(m,WindowID(mainwindow),GadgetX(glist,#PB_Gadget_ScreenCoordinate)+ListGames\header()\PXStart,GadgetY(glist,#PB_Gadget_ScreenCoordinate)+ListGames\headerSize+5)
@@ -3281,8 +4370,6 @@ Repeat
                     ListEntryVisible()
                     updateGame(*currentgame)
                   EndIf
-                  
-                  Debug *currentgame
                   
                   DisplayGamePopup(*currentgame)
                 Default
@@ -3310,7 +4397,7 @@ Repeat
                   Case #action_header                      
                     SelectElement(ListGames\header(),ListGames\undercursor\value)
                     
-                    If ListGames\header()\offset=#offset_installed Or ListGames\header()\offset=#offset_favorite Or ListGames\header()\offset=#offset_german Or ListGames\header()\offset=#offset_adult
+                    If ListGames\header()\offset=#offset_installed Or ListGames\header()\offset=#offset_favorite Or ListGames\header()\offset=#offset_german Or ListGames\header()\offset=#offset_adult Or ListGames\header()\offset=#offset_extras
                       If ListGames\header()\filter="X"
                         ListGames\header()\filter=""
                       Else
@@ -3346,6 +4433,7 @@ Repeat
                     If *currentgame <> ListGames\lgames()\game
                       *currentgame=ListGames\lgames()\game
                       ListEntryVisible()
+                      CheckRemoveGame(*currentgame)
                       updateGame(*currentgame)                      
                     EndIf
                     
@@ -3399,7 +4487,35 @@ Repeat
               If HyperLink()\gadget=EventGadget()
                 Select HyperLink()\type                                      
                   Case #hl_open
-                    RunProgram( HyperLink()\value,"",GetPathPart(HyperLink()\value) )
+                    Define pdf.s="",page.i
+                    
+                    If config\useAcrobatReader And acrobatReader<>"" And GetFilePart( removeLeft( GetPathPart(HyperLink()\value),1 ) ) ="Magazines"
+                      pdf=findPDF(HyperLink()\value,@page)
+                      If pdf<>""
+                        pdf=findfile(pdf)
+                        If page<>0
+                          RunProgram( acrobatReader,"/a page="+page+" "+#DQUOTE$+pdf+#DQUOTE$,"")
+                        Else
+                          RunProgram( pdf )
+                        EndIf
+                      EndIf
+                    EndIf
+                    
+                    If pdf=""
+                      RunProgram( HyperLink()\value,"",GetPathPart(HyperLink()\value) )
+                    EndIf
+                    
+                  Case #hl_extras
+                    If findHeader(#offset_extras)
+                      If ListGames\header()\filter=HyperLink()\value
+                        ListGames\header()\filter=""
+                      Else
+                        ListGames\header()\filter=HyperLink()\value
+                      EndIf
+                      CreateGameList()
+                      DrawList()
+                    EndIf
+                    
                   Case #hl_developer
                     If findHeader(#offset_developer)
                       If ListGames\header()\filter=HyperLink()\value
@@ -3474,6 +4590,8 @@ Repeat
   EndSelect
   
 Until event=#PB_Event_CloseWindow
+
+;- Quit
 unloadMusic()
 
 config\lastGame=*currentgame\ID
@@ -3484,6 +4602,9 @@ config\window\x=WindowX(mainwindow)
 config\window\y=WindowY(mainwindow)
 config\window\w=WindowWidth(mainwindow)
 config\window\h=WindowHeight(mainwindow)
+
+config\header\offset=ListGames\offset
+config\header\sort=ListGames\sort
 
 ClearList(config\headerSize())
 ClearList(config\headerFilter())
@@ -3502,14 +4623,15 @@ saveConfig()
 saveFavorite()
 KillThread(threadHandle)
 
+
+
 ; IDE Options = PureBasic 6.11 LTS (Windows - x64)
-; CursorPosition = 2327
-; FirstLine = 2319
-; Folding = ------------------
+; CursorPosition = 33
+; Folding = ---------------------
 ; Optimizer
 ; EnableThread
 ; EnableXP
 ; EnableOnError
 ; UseIcon = exodos.ico
-; Executable = eXeDOS_Launcher.exe
-; CurrentDirectory = C:\Spiele\eXoDOS Launcher\
+; Executable = eXoDOS_Launcher.exe
+; CurrentDirectory = E:\exedosdemo2
