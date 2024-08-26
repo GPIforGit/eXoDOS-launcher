@@ -19,8 +19,12 @@ UseZipPacker()
 ;UseMD5Fingerprint()
 
 ;TODO Header variable
-;TODO typepatch
 
+;v1.3
+; - Deutschpack - 4 kaputte Batch-Files von deutschen spielen in eXoDOS repariert
+; - Update/GLP_Addonpack_MagazinesGLP werden einmal angefragt, dann wird man nicht mehr belästigt
+
+;V1.2
 ; - listview box art, 3d box art, title screen
 ; - größe small, normal, big
 ; - sprache der Titel Englisch / Deutsch
@@ -392,6 +396,9 @@ EndStructure
 
 Structure sConfigPatch
   Mediapack_DE.i
+  UpdateZip.sConfigDateSize
+  GLPzip.sConfigDateSize
+  FixNames.i
   Map runbat.s()
 EndStructure
 
@@ -422,6 +429,7 @@ Structure sConfig
   unpack.sConfigTime
   
   useAcrobatReader.i
+  
 EndStructure
 
 Global config.sconfig
@@ -2952,6 +2960,40 @@ Structure sPatchInfo
   replace.s  
 EndStructure
 
+Global NewList FixNamesInfo.sPatchInfo()
+Macro AddFixNamesInfo(a,b)
+  AddElement(FixNamesInfo())
+  FixNamesInfo()\org=a
+  FixNamesInfo()\replace=b
+EndMacro
+
+AddFixNamesInfo("eXo\eXoDOS\!dos\!german\MoE\Magic of Endora (1994).bat",
+                "eXo\eXoDOS\!dos\!german\MoE\Magic of Endoria (1994).bat")
+
+AddFixNamesInfo("eXo\eXoDOS\!dos\!german\CyberMag\CyberMage -  Darklight Awakening (1995).bat",
+                "eXo\eXoDOS\!dos\!german\CyberMag\CyberMage - Darklight Awakening (1995).bat")
+
+AddFixNamesInfo("eXo\eXoDOS\!dos\!german\shcss\Sherlock Holmes - The Case of the Serrated Scalpel (1992).bat",
+                "eXo\eXoDOS\!dos\!german\shcss\Lost Files of Sherlock Holmes, The - The Case of the Serrated Scalpel (1992).bat")
+
+AddFixNamesInfo("eXo\eXoDOS\!dos\!german\Kathdral\Kathedrale, Die (1992).bat",
+                "eXo\eXoDOS\!dos\!german\Kathdral\Kathedrale, Die (1991).bat")
+
+
+Procedure FixNames()
+  If config\patch\FixNames<=#False Or forceUpdate
+    ForEach FixNamesInfo()
+      If FileSize(config\eXoDOSpath+FixNamesInfo()\org)<>-1
+        Debug "renameing:"+FixNamesInfo()\org
+        RenameFile(config\eXoDOSpath+FixNamesInfo()\org,config\eXoDOSpath+FixNamesInfo()\replace)
+      EndIf
+    Next
+    config\patch\FixNames=#True
+  EndIf
+EndProcedure
+  
+
+
 Global NewList PatchInfo.sPatchInfo()
 Macro addPatchInfo(a,b)
   AddElement(PatchInfo())
@@ -3070,8 +3112,7 @@ Procedure InitLocalInstall()
   If config\localInstall=#False
     ProcedureReturn #False
   EndIf
-  
-  
+    
   __makedir("eXo\eXoDOS\!dos\!german")
   __makedir("eXo\eXoDOS\!german\!save")
   __makedir("eXo\eXoDOS\!save")
@@ -3140,7 +3181,7 @@ EndProcedure
 
 Procedure CheckRemoveGame(*game.sGame)
   
-  If *game\eXoID=""
+  If *game\eXoID="" Or isProgramRunning()
     ProcedureReturn #False
   EndIf
   
@@ -3624,37 +3665,53 @@ Procedure RepairGameXML(file.s)
   
 EndProcedure
 
+Procedure checkDateSize(file.s,*c.sConfigDateSize)
+  Protected dat = GetFileDate(file,#PB_Date_Modified)
+  Protected size= FileSize(file)
+  If *c\date <> dat Or *c\size <> size
+    *c\date=dat
+    *c\size=size
+    ProcedureReturn #True
+  EndIf
+  ProcedureReturn #False
+EndProcedure
+  
+
 Procedure CheckEXODOSUpdateInstalled()
   Protected DoRepair=#False
-  If FileSize(config\eXoDOSpath+"update.zip")>0 And 
-     MessageRequester(#title,"eXoDOS-Update found!"+#LF$+"Install it?",#PB_MessageRequester_YesNo)=#PB_MessageRequester_Yes
-    
-    ConPrint("Unpack update")
-    
-    _unpack(config\eXoDOSpath+"update.zip",config\eXoDOSpath)
-    
-    If MessageRequester(#title,"Delete update.zip?",#PB_MessageRequester_YesNo)=#PB_MessageRequester_Yes
-      DeleteFile(config\eXoDOSpath+"update.zip")
+  
+  
+  If checkDateSize(config\eXoDOSpath+"update.zip",config\patch\UpdateZip)  
+    If FileSize(config\eXoDOSpath+"update.zip")>0 And 
+       MessageRequester(#title,"eXoDOS-Update found!"+#LF$+"Install it?",#PB_MessageRequester_YesNo)=#PB_MessageRequester_Yes
+      
+      ConPrint("Unpack update")
+      
+      _unpack(config\eXoDOSpath+"update.zip",config\eXoDOSpath)
+      
+      If MessageRequester(#title,"Delete update.zip?",#PB_MessageRequester_YesNo)=#PB_MessageRequester_Yes
+        DeleteFile(config\eXoDOSpath+"update.zip")
+      EndIf
+      
+      DoRepair=#True
+      enforceCheckFiles=#True
+      forceUpdate=#True
     EndIf
-    
-    DoRepair=#True
-    enforceCheckFiles=#True
-    forceUpdate=#True
   EndIf
   
   
   
-  
-  
-  If FileSize(config\eXoDOSpath+"\Content\eXoDOS_GLP_Addonpack_MagazinesGLP.zip")>0 And FileSize(config\eXoDOSpath+"\Content\eXoDOS_GLP_Addonpack_MagazinesGLP_1.0.zip")<0 And
-     MessageRequester(#title,"Found German Magazines, install it?"+#CRLF$+"WARNING, this takes a lot of time!",#PB_MessageRequester_YesNo)=#PB_MessageRequester_Yes
-    
-    ConPrint("Unpack MagazinesGLP")
-    _unpack(config\eXoDOSpath+"\Content\eXoDOS_GLP_Addonpack_MagazinesGLP.zip",config\eXoDOSpath)
-    _unpack(config\eXoDOSpath+"\Content\eXoDOS_GLP_Addonpack_MagazinesGLP_1.0.zip",config\eXoDOSpath)
-    
-    DoRepair=#True
-    enforceCheckFiles=#True
+  If checkDateSize(config\eXoDOSpath+"\Content\eXoDOS_GLP_Addonpack_MagazinesGLP.zip", config\patch\GLPzip)
+    If FileSize(config\eXoDOSpath+"\Content\eXoDOS_GLP_Addonpack_MagazinesGLP.zip")>0 And FileSize(config\eXoDOSpath+"\Content\eXoDOS_GLP_Addonpack_MagazinesGLP_1.0.zip")<0 And
+       MessageRequester(#title,"Found German Magazines, install it?"+#CRLF$+"WARNING, this takes a lot of time!",#PB_MessageRequester_YesNo)=#PB_MessageRequester_Yes
+      
+      ConPrint("Unpack MagazinesGLP")
+      _unpack(config\eXoDOSpath+"\Content\eXoDOS_GLP_Addonpack_MagazinesGLP.zip",config\eXoDOSpath)
+      _unpack(config\eXoDOSpath+"\Content\eXoDOS_GLP_Addonpack_MagazinesGLP_1.0.zip",config\eXoDOSpath)
+      
+      DoRepair=#True
+      enforceCheckFiles=#True
+    EndIf
   EndIf
   
   If config\patch\Mediapack_DE=#False
@@ -3770,6 +3827,7 @@ EndProcedure
 loadConfig()
 
 CheckEXODOSUpdateInstalled()
+FixNames()
 
 startintro()
 Define oldmusic=config\volume\noSound
@@ -3800,6 +3858,7 @@ CreateGameList()
 initPopupmenu()
 loadOnce()
 repairDosboxConf()
+
 
 ;find last game
 Define *currentgame.sGame
@@ -4626,8 +4685,9 @@ KillThread(threadHandle)
 
 
 ; IDE Options = PureBasic 6.11 LTS (Windows - x64)
-; CursorPosition = 33
-; Folding = ---------------------
+; CursorPosition = 2980
+; FirstLine = 2962
+; Folding = ----------------------
 ; Optimizer
 ; EnableThread
 ; EnableXP
